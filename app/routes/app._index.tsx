@@ -83,13 +83,9 @@ export default function Index() {
 
   return (
     <Page>
-      <TitleBar
-        title="GiftBot Dashboard"
-        primaryAction={{
-          content: "Create Rule",
-          url: "/app/bots/new",
-        }}
-      />
+      <TitleBar title="GiftBot Dashboard">
+        <button variant="primary" onClick={() => window.open("/app/bots/new", "_self")}>Create Rule</button>
+      </TitleBar>
       {/* @ts-ignore */}
       <DashboardUI rules={rules} />
     </Page>

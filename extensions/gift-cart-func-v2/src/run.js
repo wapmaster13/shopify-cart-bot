@@ -12,93 +12,71 @@
 export function run(input) {
     const NO_CHANGES = { operations: [] };
 
-    // 1. Preluăm regulile din Metafield
-    const rulesData = input.cartTransform?.metafield?.value;
-    if (!rulesData) return NO_CHANGES;
+    // 1. Verificare sigură a datelor din Metafield
+    const metafieldValue = input.cartTransform?.metafield?.value;
+    if (!metafieldValue) return NO_CHANGES;
 
-    let rules;
+    let rules = [];
     try {
-        rules = JSON.parse(rulesData);
+        rules = JSON.parse(metafieldValue);
     } catch (e) {
         return NO_CHANGES;
     }
 
-    if (!rules || !Array.isArray(rules)) return NO_CHANGES;
+    if (!Array.isArray(rules) || rules.length === 0) return NO_CHANGES;
 
-    // Sortăm regulile după prioritate (cele mai mici numere primele)
-    rules.sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    const cartLines = input.cart.lines || [];
+    if (cartLines.length === 0) return NO_CHANGES;
 
-    const cartLines = input.cart.lines;
-
-    // 2. Calculăm subtotalul coșului
-    const subtotalAmount = cartLines.reduce((acc, line) => {
+    // 2. Calcul subtotal manual (cel mai sigur mod)
+    const subtotal = cartLines.reduce((acc, line) => {
         return acc + parseFloat(line.cost?.totalAmount?.amount ?? "0");
     }, 0);
 
-    const currencyCode = cartLines.find(l => l.cost?.totalAmount?.currencyCode)?.cost?.totalAmount?.currencyCode ?? "USD";
+    const currencyCode = cartLines[0]?.cost?.totalAmount?.currencyCode ?? "USD";
 
-    // 3. Verificăm regulile
+    // 3. Procesare reguli
     for (const rule of rules) {
-        // Notă: regulile sunt deja filtrate ca fiind active în metafield.server.ts
+        if (!rule.isActive) continue;
+
         let isMatch = false;
 
+        // Verificare Prag de Valoare
         if (rule.triggerType === "CART_VALUE") {
-            if (subtotalAmount >= parseFloat(rule.minCartValue || "0")) {
+            if (subtotal >= parseFloat(rule.minCartValue || "0")) {
                 isMatch = true;
             }
         } 
+        // Verificare Produse Specifice (Observă: NU mai folosim JSON.parse aici)
         else if (rule.triggerType === "PRODUCTS") {
-            const triggerProductIds = rule.triggerProductIds || []; // NU mai parsăm aici
-            isMatch = cartLines.some(line => triggerProductIds.includes(line.merchandise.id));
-        }
-        else if (rule.triggerType === "COMBINED") {
-            const hasValue = subtotalAmount >= parseFloat(rule.minCartValue || "0");
-            const triggerProductIds = rule.triggerProductIds || [];
-            const hasProduct = cartLines.some(line => triggerProductIds.includes(line.merchandise.id));
-            isMatch = hasValue && hasProduct;
+            const triggerIds = rule.triggerProductIds || [];
+            isMatch = cartLines.some(line => triggerIds.includes(line.merchandise.id));
         }
 
         if (isMatch) {
-            const giftVariantIds = rule.giftVariantIds || [];
-            if (giftVariantIds.length === 0) continue;
-
-            const giftVariantId = giftVariantIds[0];
+            const giftVariantId = rule.giftVariantIds?.[0];
+            if (!giftVariantId) continue;
 
             // Verificăm dacă cadoul este deja în coș
-            const alreadyPresent = cartLines.some(line => line.merchandise.id === giftVariantId);
-            if (alreadyPresent && !rule.applyIfAlreadyInCart) continue;
+            const isAlreadyPresent = cartLines.some(l => l.merchandise.id === giftVariantId);
+            if (isAlreadyPresent && !rule.applyIfAlreadyInCart) continue;
 
-            // Alegem prima linie ca ancoră pentru Bundle
             const targetLine = cartLines[0];
-            if (!targetLine) return NO_CHANGES;
-
             return {
-                operations: [
-                    {
-                        expand: {
-                            cartLineId: targetLine.id,
-                            title: "Gift Reward Applied",
-                            expandedCartItems: [
-                                {
-                                    merchandiseId: targetLine.merchandise.id,
-                                    quantity: targetLine.quantity,
-                                },
-                                {
-                                    merchandiseId: giftVariantId,
-                                    quantity: 1,
-                                    price: {
-                                        adjustment: {
-                                            fixedPricePerUnit: {
-                                                amount: "0.00",
-                                                currencyCode: currencyCode
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
+                operations: [{
+                    expand: {
+                        cartLineId: targetLine.id,
+                        title: "Gift Reward Applied",
+                        expandedCartItems: [
+                            { merchandiseId: targetLine.merchandise.id, quantity: targetLine.quantity },
+                            {
+                                merchandiseId: giftVariantId,
+                                quantity: 1,
+                                price: { adjustment: { fixedPricePerUnit: { amount: "0.00", currencyCode } } }
+                            }
+                        ]
                     }
-                ]
+                }]
             };
         }
     }
