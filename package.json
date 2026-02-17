@@ -11,6 +11,7 @@
         "start": "remix-serve ./build/server/index.js",
         "typecheck": "tsc",
         "deploy": "npx shopify app deploy",
+        "config:push": "shopify app config push",
         "build:function": "cd extensions/gift-cart-func-v2 && npm install && npm run build"
     },
     "dependencies": {

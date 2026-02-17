@@ -5,6 +5,9 @@ name = "gifty-ttsdsasasasa"
 application_url = "https://example.com"
 embedded = true
 
+[build]
+automatically_update_urls_on_dev = true
+
 [webhooks]
 api_version = "2026-04"
 
@@ -14,6 +17,3 @@ scopes = "read_cart_transforms,read_orders,read_products,write_cart_transforms,w
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
-
-[build]
-automatically_update_urls_on_dev = true

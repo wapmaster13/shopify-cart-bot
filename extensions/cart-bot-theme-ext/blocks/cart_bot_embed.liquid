@@ -6,76 +6,16 @@
 }
 {% endschema %}
 
+<!-- CartBot Loader -->
 <script>
-  (function() {
-    console.log("Cart Bot: Professional Monitor v4.0 - Active");
-
-    const selectors = [
-      '#CartDrawer-CartItems', // Dawn Standard
-      '.cart-items',           // Majoritatea temelor
-      '#cart-items',           // Teme vechi
-      '.drawer__contents'      // Dawn/Sense fallback
-    ];
-
-    async function safeRefresh() {
-      console.log("Cart Bot: Syncing items...");
-      
-      try {
-        // Cerem doar bucățile de HTML necesare de la Shopify
-        const response = await fetch(`${window.Shopify.routes.root}cart?sections=cart-drawer,cart-icon-bubble,main-cart-items`);
-        const sectionsData = await response.json();
-
-        // 1. ACTUALIZARE ICONIȚĂ (Bula cu numărul de produse)
-        const bubble = document.getElementById('cart-icon-bubble') || document.querySelector('.cart-count-bubble');
-        if (bubble && sectionsData['cart-icon-bubble']) {
-           bubble.innerHTML = new DOMParser().parseFromString(sectionsData['cart-icon-bubble'], 'text/html').body.innerHTML;
-        }
-
-        // 2. ACTUALIZARE CHIRURGICALĂ A PRODUSELOR (Fără să închidem drawer-ul)
-        const currentHtml = sectionsData['cart-drawer'] || sectionsData['main-cart-items'];
-        if (currentHtml) {
-          const newDoc = new DOMParser().parseFromString(currentHtml, 'text/html');
-          
-          selectors.forEach(selector => {
-            const oldContainer = document.querySelector(selector);
-            const newContainer = newDoc.querySelector(selector);
-            
-            if (oldContainer && newContainer) {
-              // Înlocuim DOAR conținutul interior, nu și wrapper-ul care are clasa 'active'
-              oldContainer.innerHTML = newContainer.innerHTML;
-              console.log(`Cart Bot: Sync success on [${selector}]`);
-            }
-          });
-        }
-
-        // 3. REFRESH LOGICĂ TEMĂ (Pentru a activa butoanele de +/-)
-        if (window.pubsub) window.pubsub.publish('cart-updated', { cart: {} });
-        document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
-
-      } catch (e) {
-        console.error("Cart Bot: Error during sync", e);
-      }
-    }
-
-    // INTERCEPTARE UNIVERSALĂ (Fetch + XHR)
-    const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
-      const response = await originalFetch(...args);
-      const url = typeof args[0] === 'string' ? args[0] : args[0].url;
-      if (url.includes('/cart/add') || url.includes('/cart/change')) {
-        setTimeout(safeRefresh, 500); // 500ms sunt suficienți pentru viteză optimă
-      }
-      return response;
-    };
-
-    const originalSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.send = function() {
-      this.addEventListener('load', function() {
-        if (this.responseURL && this.responseURL.includes('/cart/add')) {
-          setTimeout(safeRefresh, 500);
-        }
-      });
-      return originalSend.apply(this, arguments);
-    };
+    // We use the App Proxy path configured in shopify.app.toml
+    var proxyBase = '/apps/advanced-cart-bot';
+    
+    // Load Rules (Proxy maps to /public/rules/...)
+    loadScript(proxyBase + '/rules/' + shop + '?v=' + v);
+    
+    // Load Brain (Proxy maps to /public/cart-bot.js)
+    loadScript(proxyBase + '/cart-bot.js?v=' + v);
+    
   })();
 </script>
