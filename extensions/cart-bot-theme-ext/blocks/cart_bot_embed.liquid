@@ -8,73 +8,74 @@
 
 <script>
   (function() {
-    const originalFetch = window.fetch;
-    
-    // Check for bot configuration (in a real app, this might come from a stamped meta tag or global object)
-    const botConfig = window.GiftBotConfig || { requireConsent: false, ajaxOnly: true };
+    console.log("Cart Bot: Professional Monitor v4.0 - Active");
 
-    window.fetch = async function(...args) {
-      const [resource, config] = args;
-      const url = typeof resource === 'string' ? resource : resource.url;
+    const selectors = [
+      '#CartDrawer-CartItems', // Dawn Standard
+      '.cart-items',           // Majoritatea temelor
+      '#cart-items',           // Teme vechi
+      '.drawer__contents'      // Dawn/Sense fallback
+    ];
 
-      // Intercept Add to Cart
-      if (url.includes('/cart/add') && botConfig.requireConsent) {
-          // Check if consent was given (e.g. via sessionStorage or a specific header)
-          const consentGiven = sessionStorage.getItem('gift_bot_consent');
+    async function safeRefresh() {
+      console.log("Cart Bot: Syncing items...");
+      
+      try {
+        // Cerem doar bucățile de HTML necesare de la Shopify
+        const response = await fetch(`${window.Shopify.routes.root}cart?sections=cart-drawer,cart-icon-bubble,main-cart-items`);
+        const sectionsData = await response.json();
+
+        // 1. ACTUALIZARE ICONIȚĂ (Bula cu numărul de produse)
+        const bubble = document.getElementById('cart-icon-bubble') || document.querySelector('.cart-count-bubble');
+        if (bubble && sectionsData['cart-icon-bubble']) {
+           bubble.innerHTML = new DOMParser().parseFromString(sectionsData['cart-icon-bubble'], 'text/html').body.innerHTML;
+        }
+
+        // 2. ACTUALIZARE CHIRURGICALĂ A PRODUSELOR (Fără să închidem drawer-ul)
+        const currentHtml = sectionsData['cart-drawer'] || sectionsData['main-cart-items'];
+        if (currentHtml) {
+          const newDoc = new DOMParser().parseFromString(currentHtml, 'text/html');
           
-          if (!consentGiven) {
-              console.log("Gift Bot: Intercepted Add to Cart - Consent Required");
-              // Emit event to open modal
-              document.dispatchEvent(new CustomEvent('gift-bot:require-consent', { detail: { originalRequest: args } }));
-              
-              // Return a fake response or error to stop the original add
-              return new Response(JSON.stringify({ description: "Consent required" }), { status: 422 });
-          }
-      }
+          selectors.forEach(selector => {
+            const oldContainer = document.querySelector(selector);
+            const newContainer = newDoc.querySelector(selector);
+            
+            if (oldContainer && newContainer) {
+              // Înlocuim DOAR conținutul interior, nu și wrapper-ul care are clasa 'active'
+              oldContainer.innerHTML = newContainer.innerHTML;
+              console.log(`Cart Bot: Sync success on [${selector}]`);
+            }
+          });
+        }
 
+        // 3. REFRESH LOGICĂ TEMĂ (Pentru a activa butoanele de +/-)
+        if (window.pubsub) window.pubsub.publish('cart-updated', { cart: {} });
+        document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
+
+      } catch (e) {
+        console.error("Cart Bot: Error during sync", e);
+      }
+    }
+
+    // INTERCEPTARE UNIVERSALĂ (Fetch + XHR)
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
       const response = await originalFetch(...args);
-
-      // Post-request logic (e.g. check for gifts)
-      if (url.includes('/cart/add') || url.includes('/cart/change') || url.includes('/cart/update') || url.includes('/cart/clear')) {
-         console.log("Gift Bot: Cart updated, triggering refresh events...");
-         document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
-         document.dispatchEvent(new CustomEvent('cart:update', { bubbles: true }));
-         // Some themes listen for 'cart:updated' from other libs
-         document.dispatchEvent(new CustomEvent('cart:updated', { bubbles: true, detail: { cart: {} } }));
+      const url = typeof args[0] === 'string' ? args[0] : args[0].url;
+      if (url.includes('/cart/add') || url.includes('/cart/change')) {
+        setTimeout(safeRefresh, 500); // 500ms sunt suficienți pentru viteză optimă
       }
-
       return response;
     };
 
-    console.log("Cart Bot: Active & Listening");
+    const originalSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function() {
+      this.addEventListener('load', function() {
+        if (this.responseURL && this.responseURL.includes('/cart/add')) {
+          setTimeout(safeRefresh, 500);
+        }
+      });
+      return originalSend.apply(this, arguments);
+    };
   })();
-</script>
-
-<!-- Placeholder for Consent Modal (Hidden by default) -->
-<div id="gift-bot-modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
-    <div style="background: white; padding: 20px; border-radius: 12px; width: 300px; text-align: center;">
-        <h3>Accept Free Gift?</h3>
-        <p>We found a promotion for you!</p>
-        <button id="gift-bot-accept" style="background: black; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer;">Yes, please!</button>
-        <button id="gift-bot-decline" style="background: transparent; border: 1px solid #ccc; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-left: 10px;">No thanks</button>
-    </div>
-</div>
-
-<script>
-    document.addEventListener('gift-bot:require-consent', (e) => {
-        const modal = document.getElementById('gift-bot-modal');
-        if(modal) modal.style.display = 'flex';
-        
-        document.getElementById('gift-bot-accept').onclick = () => {
-             sessionStorage.setItem('gift_bot_consent', 'true');
-             modal.style.display = 'none';
-             // Re-play the original request? Or just ask user to click again?
-             // Simplest for MVP: Ask to click again or reload.
-             alert("Thanks! Please click Add to Cart again.");
-        };
-        
-         document.getElementById('gift-bot-decline').onclick = () => {
-             modal.style.display = 'none';
-        };
-    });
 </script>

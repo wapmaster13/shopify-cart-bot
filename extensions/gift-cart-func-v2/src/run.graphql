@@ -3,23 +3,16 @@ query RunInput {
     lines {
       id
       quantity
-      cost {
-        totalAmount {
-          amount
-          currencyCode
-        }
-      }
+      cost { totalAmount { amount currencyCode } }
       merchandise {
         ... on ProductVariant {
           id
-          title
+          product { title } # CEREM TITLUL PRODUSULUI
         }
       }
     }
   }
   cartTransform {
-    metafield(namespace: "cart_bot", key: "rules_data") {
-      value
-    }
+    metafield(namespace: "cart_bot", key: "rules_data") { value }
   }
 }
