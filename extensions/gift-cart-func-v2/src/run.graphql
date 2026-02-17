@@ -12,6 +12,7 @@ query RunInput {
       merchandise {
         ... on ProductVariant {
           id
+          title # ADAUGĂ ACEASTA
         }
       }
     }
