@@ -1,34 +1,31 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 
-// Ensure dist directory exists
+// 1. Asigurăm existența folderului dist
 if (!fs.existsSync('dist')) {
     fs.mkdirSync('dist');
 }
 
-console.log('Copying JS...');
+console.log('📦 Bundling robot logic with esbuild...');
 try {
-    // Avoid esbuild, just copy
-    fs.copyFileSync('src/run.js', 'dist/run.js');
-    // Check size of JS
-    const jsStats = fs.statSync('dist/run.js');
-    console.log(`JS Size: ${jsStats.size} bytes`);
+    // Unim src/index.js (I/O) cu src/run.js (Logica)
+    execSync('npx esbuild src/index.js --bundle --minify --format=esm --outfile=dist/run.bundle.js', { stdio: 'inherit' });
 } catch (e) {
-    console.error('copy failed');
+    console.error('❌ Esbuild failed');
     process.exit(1);
 }
 
-console.log('Compiling WASM (Dynamic, No Bundle)...');
+console.log('🚀 Compiling WASM (Dynamic)...');
 try {
-    // Dynamic linking with -d
-    // Use javy (latest installed)
-    execSync('npx javy compile dist/run.js -o dist/function.wasm -d', { stdio: 'inherit', shell: true });
-
+    // Compilăm fișierul rezultat (bundle) în WASM
+    execSync('npx javy compile dist/run.bundle.js -o dist/function.wasm -d', { stdio: 'inherit', shell: true });
+    
     const wasmStats = fs.statSync('dist/function.wasm');
-    console.log(`WASM Size (Dynamic): ${wasmStats.size} bytes`);
-
+    console.log(`✅ WASM created successfully: ${wasmStats.size} bytes`);
 } catch (e) {
-    console.error('javy failed');
+    console.error('❌ Javy compilation failed');
     process.exit(1);
 }
-console.log('Build complete.');
+
+console.log('✨ Build complete!');
