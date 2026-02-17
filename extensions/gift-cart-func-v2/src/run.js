@@ -12,7 +12,7 @@
 export function run(input) {
     const NO_CHANGES = { operations: [] };
 
-    // 1. Preluare date din metafield
+    // 1. Preluăm regulile din Metafield
     const rulesData = input.cartTransform?.metafield?.value;
     if (!rulesData) return NO_CHANGES;
 
@@ -25,11 +25,12 @@ export function run(input) {
 
     if (!rules || !Array.isArray(rules)) return NO_CHANGES;
 
-    // Sortăm după prioritate
+    // Sortăm regulile după prioritate (cele mai mici numere primele)
     rules.sort((a, b) => (a.priority || 0) - (b.priority || 0));
 
-    // 2. Calculăm subtotalul manual
     const cartLines = input.cart.lines;
+
+    // 2. Calculăm subtotalul coșului
     const subtotalAmount = cartLines.reduce((acc, line) => {
         return acc + parseFloat(line.cost?.totalAmount?.amount ?? "0");
     }, 0);
@@ -38,6 +39,7 @@ export function run(input) {
 
     // 3. Verificăm regulile
     for (const rule of rules) {
+        // Notă: regulile sunt deja filtrate ca fiind active în metafield.server.ts
         let isMatch = false;
 
         if (rule.triggerType === "CART_VALUE") {
@@ -46,43 +48,43 @@ export function run(input) {
             }
         } 
         else if (rule.triggerType === "PRODUCTS") {
-            const triggerIds = rule.triggerProductIds || []; // NU parsăm, este deja array
-            isMatch = cartLines.some(line => triggerIds.includes(line.merchandise.id));
-        } 
+            const triggerProductIds = rule.triggerProductIds || []; // NU mai parsăm aici
+            isMatch = cartLines.some(line => triggerProductIds.includes(line.merchandise.id));
+        }
         else if (rule.triggerType === "COMBINED") {
             const hasValue = subtotalAmount >= parseFloat(rule.minCartValue || "0");
-            const triggerIds = rule.triggerProductIds || [];
-            const hasProduct = cartLines.some(line => triggerIds.includes(line.merchandise.id));
+            const triggerProductIds = rule.triggerProductIds || [];
+            const hasProduct = cartLines.some(line => triggerProductIds.includes(line.merchandise.id));
             isMatch = hasValue && hasProduct;
         }
 
         if (isMatch) {
-            const giftIds = rule.giftVariantIds || [];
-            if (giftIds.length === 0) continue;
+            const giftVariantIds = rule.giftVariantIds || [];
+            if (giftVariantIds.length === 0) continue;
 
-            const giftId = giftIds[0];
+            const giftVariantId = giftVariantIds[0];
 
-            // Verificăm dacă cadoul e deja în coș
-            const alreadyInCart = cartLines.some(line => line.merchandise.id === giftId);
-            if (alreadyInCart && !rule.applyIfAlreadyInCart) continue;
+            // Verificăm dacă cadoul este deja în coș
+            const alreadyPresent = cartLines.some(line => line.merchandise.id === giftVariantId);
+            if (alreadyPresent && !rule.applyIfAlreadyInCart) continue;
 
+            // Alegem prima linie ca ancoră pentru Bundle
             const targetLine = cartLines[0];
             if (!targetLine) return NO_CHANGES;
 
-            // Returnăm operația de expandare
             return {
                 operations: [
                     {
                         expand: {
                             cartLineId: targetLine.id,
-                            title: "Cart Bundle",
+                            title: "Gift Reward Applied",
                             expandedCartItems: [
                                 {
                                     merchandiseId: targetLine.merchandise.id,
                                     quantity: targetLine.quantity,
                                 },
                                 {
-                                    merchandiseId: giftId,
+                                    merchandiseId: giftVariantId,
                                     quantity: 1,
                                     price: {
                                         adjustment: {
