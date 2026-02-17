@@ -1,0 +1,80 @@
+{% schema %}
+{
+  "name": "Cart Bot Monitor",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}
+
+<script>
+  (function() {
+    const originalFetch = window.fetch;
+    
+    // Check for bot configuration (in a real app, this might come from a stamped meta tag or global object)
+    const botConfig = window.GiftBotConfig || { requireConsent: false, ajaxOnly: true };
+
+    window.fetch = async function(...args) {
+      const [resource, config] = args;
+      const url = typeof resource === 'string' ? resource : resource.url;
+
+      // Intercept Add to Cart
+      if (url.includes('/cart/add') && botConfig.requireConsent) {
+          // Check if consent was given (e.g. via sessionStorage or a specific header)
+          const consentGiven = sessionStorage.getItem('gift_bot_consent');
+          
+          if (!consentGiven) {
+              console.log("Gift Bot: Intercepted Add to Cart - Consent Required");
+              // Emit event to open modal
+              document.dispatchEvent(new CustomEvent('gift-bot:require-consent', { detail: { originalRequest: args } }));
+              
+              // Return a fake response or error to stop the original add
+              return new Response(JSON.stringify({ description: "Consent required" }), { status: 422 });
+          }
+      }
+
+      const response = await originalFetch(...args);
+
+      // Post-request logic (e.g. check for gifts)
+      if (url.includes('/cart/add') || url.includes('/cart/change') || url.includes('/cart/update') || url.includes('/cart/clear')) {
+         console.log("Gift Bot: Cart updated, triggering refresh events...");
+         document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
+         document.dispatchEvent(new CustomEvent('cart:update', { bubbles: true }));
+         // Some themes listen for 'cart:updated' from other libs
+         document.dispatchEvent(new CustomEvent('cart:updated', { bubbles: true, detail: { cart: {} } }));
+      }
+
+      return response;
+    };
+
+    console.log("Cart Bot: Active & Listening");
+  })();
+</script>
+
+<!-- Placeholder for Consent Modal (Hidden by default) -->
+<div id="gift-bot-modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 20px; border-radius: 12px; width: 300px; text-align: center;">
+        <h3>Accept Free Gift?</h3>
+        <p>We found a promotion for you!</p>
+        <button id="gift-bot-accept" style="background: black; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer;">Yes, please!</button>
+        <button id="gift-bot-decline" style="background: transparent; border: 1px solid #ccc; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-left: 10px;">No thanks</button>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('gift-bot:require-consent', (e) => {
+        const modal = document.getElementById('gift-bot-modal');
+        if(modal) modal.style.display = 'flex';
+        
+        document.getElementById('gift-bot-accept').onclick = () => {
+             sessionStorage.setItem('gift_bot_consent', 'true');
+             modal.style.display = 'none';
+             // Re-play the original request? Or just ask user to click again?
+             // Simplest for MVP: Ask to click again or reload.
+             alert("Thanks! Please click Add to Cart again.");
+        };
+        
+         document.getElementById('gift-bot-decline').onclick = () => {
+             modal.style.display = 'none';
+        };
+    });
+</script>

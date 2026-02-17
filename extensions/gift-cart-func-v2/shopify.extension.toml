@@ -1,0 +1,18 @@
+api_version = "2026-01"
+
+[[extensions]]
+name = "gift-cart-func-v2"
+handle = "gift-cart-func-v2"
+
+uid = "51e50633-3abc-679d-250b-8a59ab9e1260d177207b"
+
+type = "function"
+
+[extensions.build]
+command = "node build.cjs"
+path = "dist/function.wasm"
+
+[[extensions.targeting]]
+target = "purchase.cart-transform.run"
+input_query = "src/run.graphql"
+export = "_start"

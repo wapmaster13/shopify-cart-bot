@@ -1,0 +1,56 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+
+model GiftRule {
+  id                    String    @id @default(uuid())
+  shop                  String
+  name                  String
+  status                String
+  priority              Int
+  triggerType           String
+  triggerProductIds     String    // JSON
+  minCartValue          Float
+  minQuantity           Int
+  maxQuantity           Int
+  replaceTriggerItems   Boolean
+  giftVariantId         String?   // Legacy/Unused
+  giftVariantIds        String    // JSON
+  applyIfAlreadyInCart  Boolean
+  requireConsent        Boolean
+  oncePerSession        Boolean
+  reverseLogic          Boolean
+  ajaxOnly              Boolean
+  applyForEachCondition Boolean
+  startDate             DateTime?
+  endDate               DateTime?
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+}

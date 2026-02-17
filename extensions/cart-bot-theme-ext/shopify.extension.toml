@@ -1,0 +1,9 @@
+api_version = "2025-01"
+
+[[extensions]]
+name = "Cart Bot Theme Ext"
+handle = "cart-bot-theme-ext"
+
+uid = "23b72d3c-0558-c17c-80a5-aed8a4b369eb3220dea9"
+
+type = "theme_app_extension"
