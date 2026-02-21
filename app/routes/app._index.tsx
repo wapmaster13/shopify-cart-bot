@@ -77,17 +77,30 @@ export async function action({ request }: { request: Request }) {
 }
 
 import { DashboardUI } from "../components/DashboardUI";
+// Adăugăm useNavigate de la Remix
+import { useNavigate } from "@remix-run/react"; 
 
 export default function Index() {
   const { rules } = useLoaderData<typeof loader>();
+  const navigate = useNavigate(); // Inițializăm router-ul Remix
 
   return (
     <Page>
       <TitleBar title="GiftBot Dashboard">
-        <button variant="primary" onClick={() => window.open("/app/bots/new", "_self")}>Create Rule</button>
+        {/* Folosim navigate() în loc de window.open pentru a păstra totul ca un SPA (Single Page App) */}
+        <button variant="primary" onClick={() => navigate("/app/bots/new")}>
+            Create Rule
+        </button>
       </TitleBar>
-      {/* @ts-ignore */}
-      <DashboardUI rules={rules} />
+      
+      {/* Transmitem rutele corecte către interfața Dashboard-ului */}
+      <DashboardUI 
+        rules={rules} 
+        routes={{
+            newRule: "/app/bots/new",
+            editRule: (id: string) => `/app/bots/${id}`
+        }}
+      />
     </Page>
   );
 }

@@ -14,7 +14,7 @@ export function loader() {
   debugIndicator.style.display = 'none';
   document.body.appendChild(debugIndicator);
 
-  console.log("CartBot: Brain Loaded 🧠 v7.0 (Universal)");
+  console.log("CartBot: Brain Loaded 🧠 v8.0 (Robust Route)");
 
   const CONFIG = {
     debounceTime: 800, // Sync delay (wait for WASM)
@@ -200,6 +200,58 @@ export function loader() {
      setTimeout(() => { toaster.style.transform = 'translateY(150%)'; }, 4000);
   }
 
+  // --- 2.5 Logic: Manage Gifts (Client Side) ---
+  async function manageGifts(cart) {
+      const rules = window.CartBotRules || [];
+      const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
+      let changesMade = false;
+      
+      if(debug) console.log("CartBot: 🎁 Managing Gifts...", rules);
+
+      // Collect current cart items (simple variant IDs/Product IDs)
+      const cartVariantIds = new Set(cart.items.map(i => i.variant_id || i.id));
+      const cartProductIds = new Set(cart.items.map(i => i.product_id));
+      const cartTotal = cart.total_price / 100; 
+
+      for (const rule of rules) {
+          let eligible = false;
+          
+          if (rule.triggerType === 'CART_VALUE' || rule.triggerType === 'COMBINED') {
+             if (cartTotal >= parseFloat(rule.minCartValue)) eligible = true;
+          }
+          
+          if (!eligible && (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED')) {
+              const triggerIds = rule.triggerProductIds || [];
+              const hasTrigger = triggerIds.some(tid => {
+                 return cartProductIds.has(Number(tid)) || cartVariantIds.has(Number(tid));
+              });
+              if(hasTrigger) eligible = true;
+          }
+
+          if (eligible) {
+              const giftId = rule.giftVariantIds?.[0]; // First gift
+              if (giftId && !cartVariantIds.has(Number(giftId))) {
+                  if(debug) console.log("CartBot: Adding Missing Gift", giftId);
+                  try {
+                      await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                              items: [{
+                                  id: Number(giftId),
+                                  quantity: 1,
+                                  properties: { '_FreeGift': 'true' }
+                              }]
+                          })
+                      });
+                      changesMade = true;
+                  } catch(e) { console.error("CartBot: Add Gift Error", e); }
+              }
+          } 
+      }
+      return changesMade;
+  }
+
   // --- 3. Main Sync Logic ---
   async function syncCartUI(force = false) {
     if (STATE.isSyncing && !force) return;
@@ -210,22 +262,29 @@ export function loader() {
 
     try {
       if (debug) console.log("CartBot: Starting Sync...");
-
+      
+      // 1. Fetch Data
       const sectionsParam = CONFIG.sections.join(',');
-      const response = await fetch(\`\${window.Shopify.routes.root}cart?sections=\${sectionsParam}\`);
-      if (!response.ok) throw new Error(\`HTTP error! Status: \${response.status}\`);
-      const data = await response.json();
-      
-      // Execute Kitchen Sink Refresh
-      await refreshCartUI(data);
+      const [cartRes, uiRes] = await Promise.all([
+          fetch(window.Shopify.routes.root + 'cart.js').then(r => r.json()),
+          fetch(window.Shopify.routes.root + 'cart?sections=' + sectionsParam).then(r => r.json())
+      ]);
 
-      // --- GIFT DETECTION ---
-      // Fetch full cart to check price/items (lightweight call)
-      const cartRes = await fetch(\`\${window.Shopify.routes.root}cart.js\`);
-      const cart = await cartRes.json();
-      STATE.itemCount = cart.item_count;
-      
-      const hasGift = cart.items.some(item => item.final_price === 0);
+      STATE.itemCount = cartRes.item_count;
+
+      // 2. Manage Gifts (Client Side Logic)
+      const giftsChanged = await manageGifts(cartRes);
+      if (giftsChanged) {
+          if(debug) console.log("CartBot: Gifts updated, recursing sync...");
+          STATE.isSyncing = false; // Reset lock
+          return syncCartUI(true); // Force recurse to update UI with new items
+      }
+
+      // 3. Update UI (Kitchen Sink)
+      await refreshCartUI(uiRes);
+
+      // --- GIFT DETECTION (Toast) ---
+      const hasGift = cartRes.items.some(item => item.final_price === 0 || (item.properties && item.properties['_FreeGift']));
       if (hasGift && !window.CartBotGiftShown) {
            showGiftToaster();
            window.CartBotGiftShown = true;
@@ -245,138 +304,38 @@ export function loader() {
 
   // --- 4. Instant Logic: Spy & Match ---
   function checkRulesAndTrigger(addedId = null) {
-      const rules = window.CartBotRules || [];
-      const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
-      let shouldTrigger = false;
-
-      // 1. Instant ID Match
-      if (addedId) {
-          const productMatch = rules.some(r => {
-             const ids = r.triggerProductIds || [];
-             return ids.includes(String(addedId)) || ids.includes(Number(addedId));
-          });
-          if (productMatch) {
-              if (debug) console.log("CartBot: ⚡ Instant Rule Match for ID:", addedId);
-              shouldTrigger = true;
-          }
-      }
-      
-      // 2. Global / Value Checks
-      const hasValueRules = rules.some(r => r.triggerType === 'CART_VALUE' || r.triggerType === 'COMBINED');
-      if (hasValueRules) shouldTrigger = true;
-
-      if (!shouldTrigger && rules.length > 0) shouldTrigger = true; // Fallback
-
-      if (shouldTrigger) {
-          triggerSync();
-      }
+      // Just trigger sync, let syncCartUI handle logic
+      triggerSync(); 
   }
-
 
   // --- 5. Aggressive Interceptors (Monkey-Patching) ---
   const originalFetch = window.fetch;
   window.fetch = async function (...args) {
-      let url = args[0] && (typeof args[0] === 'string' ? args[0] : args[0].url);
-      
-      // Loop Prevention
-      if (url && url.includes('cartbot-cart-call')) {
-          return originalFetch.apply(this, args);
-      }
-
-      if (url && url.includes('/cart/add')) {
-          try {
-              let init = args[1];
-              if (init && init.body) {
-                  let body = init.body;
-                  let addedIds = [];
-
-                  if (typeof body === 'string') {
-                      let parsed = JSON.parse(body);
-                      let items = parsed.items ? parsed.items : [parsed];
-                      addedIds = items.map(i => Number(i.id || i.variant_id));
-                  } else if (body instanceof FormData) {
-                      const id = body.get('id');
-                      if (id) addedIds = [Number(id)];
-                  }
-
-                  if (addedIds.length > 0) {
-                      const rules = window.CartBotRules || [];
-                      const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
-                      let giftsToAdd = new Set();
-                      
-                      rules.forEach(rule => {
-                          const triggerIds = (rule.triggerProductIds || []).map(extractId);
-                          const hasTrigger = triggerIds.some(tid => addedIds.includes(tid));
-                          if (hasTrigger) {
-                              const giftId = rule.giftVariantIds?.[0];
-                              if (giftId) giftsToAdd.add(extractId(giftId));
-                          }
-                      });
-
-                      if (giftsToAdd.size > 0) {
-                          const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
-                          if (debug) console.log("CartBot: 💉 Pre-Add Injection for gifts:", giftsToAdd);
-                          
-                          const itemsToAdd = Array.from(giftsToAdd).map(giftId => ({
-                              id: giftId,
-                              quantity: 1,
-                              properties: { '_FreeGift': 'true' }
-                          }));
-
-                          // Perform the Pre-Add Request
-                          await originalFetch(window.Shopify.routes.root + 'cart/add.js?cartbot-cart-call=true', {
-                              method: 'POST',
-                              headers: {
-                                  'Content-Type': 'application/json',
-                                  'Accept': 'application/json'
-                              },
-                              body: JSON.stringify({ items: itemsToAdd })
-                          });
-                      }
-                  }
-              }
-          } catch (e) {
-              console.error("CartBot: Fetch Interceptor Error", e);
-          }
-      }
-
-      const fetchPromise = originalFetch.apply(this, args);
-      if (url && (url.includes('/cart/add') || url.includes('/cart/update') || url.includes('/cart/change'))) {
-          fetchPromise.then(async (response) => {
-              if (response.ok) {
-                  setTimeout(() => triggerSync(), 100);
-                  
-                  // Backup Sync (Optional Fallback)
-                  setTimeout(() => {
-                      if (window.pubsub) {
-                         window.pubsub.publish('cart-updated', { cart: {} });
-                      }
-                  }, 500);
-              }
-          });
-      }
-      return fetchPromise;
+    const url = args[0] && (typeof args[0] === 'string' ? args[0] : args[0].url);
+    const fetchPromise = originalFetch.apply(this, args);
+    if (url && (url.includes('/cart/add') || url.includes('/cart/update') || url.includes('/cart/change'))) {
+        fetchPromise.then(async (response) => {
+            if (response.ok) {
+                // Wait slightly for Shopify to process, then sync
+                setTimeout(() => triggerSync(), 100);
+            }
+        });
+    }
+    return fetchPromise;
   };
 
   const originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function (body) {
     this.addEventListener('load', function () {
       if (this.responseURL && (this.responseURL.includes('/cart/add') || this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change'))) {
-         let addedId = null;
-         try {
-             if (typeof body === 'string') {
-                 const parsed = JSON.parse(body);
-                 if (parsed.id) addedId = parsed.id;
-             }
-         } catch(e) {}
-         checkRulesAndTrigger(addedId);
+         setTimeout(() => triggerSync(), 100);
       }
     });
     originalSend.call(this, body);
   };
 
   // Init Check
-  fetch(window.Shopify.routes.root + 'cart.js').then(r=>r.json()).then(c => STATE.itemCount = c.item_count);
+  triggerSync();
 
 })();
 `;

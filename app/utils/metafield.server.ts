@@ -30,7 +30,7 @@ export async function syncGiftRules(admin: any, shop: string) {
             triggerProductIds: r.triggerProductIds ? JSON.parse(r.triggerProductIds) : [],
             giftVariantIds: r.giftVariantIds ? JSON.parse(r.giftVariantIds) : [],
             applyIfAlreadyInCart: r.applyIfAlreadyInCart,
-            isActive: true 
+            isActive: true
         }));
 
         console.log(`✅ Sincronizăm regulile pe ID-ul robotului: ${transformId}`);
@@ -46,7 +46,7 @@ export async function syncGiftRules(admin: any, shop: string) {
             {
                 variables: {
                     metafields: [{
-                        ownerId: transformId, 
+                        ownerId: transformId,
                         namespace: "cart_bot",
                         key: "rules_data",
                         type: "json",
@@ -58,7 +58,45 @@ export async function syncGiftRules(admin: any, shop: string) {
 
         const resJson = await response.json();
         if (resJson.data?.metafieldsSet?.userErrors?.length > 0) {
-            console.error("❌ Eroare Sincronizare:", resJson.data.metafieldsSet.userErrors);
+            console.error("❌ Eroare Sincronizare Transform:", resJson.data.metafieldsSet.userErrors);
+        }
+
+        // 5. Salvam Metafield-ul si pe recordul Shop (PENTRU FRONTEND)
+        try {
+            const shopQuery = await admin.graphql(`{ shop { id } }`);
+            const shopDataResp = await shopQuery.json();
+            const shopId = shopDataResp.data?.shop?.id;
+
+            if (shopId) {
+                const shopMetaResponse = await admin.graphql(
+                    `#graphql
+                    mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+                        metafieldsSet(metafields: $metafields) {
+                            userErrors { field message }
+                        }
+                    }`,
+                    {
+                        variables: {
+                            metafields: [{
+                                ownerId: shopId,
+                                namespace: "cartbot",
+                                key: "rules",
+                                type: "json",
+                                value: JSON.stringify(rulesData)
+                            }]
+                        }
+                    }
+                );
+
+                const shopMetaJson = await shopMetaResponse.json();
+                if (shopMetaJson.data?.metafieldsSet?.userErrors?.length > 0) {
+                    console.error("❌ Eroare Sincronizare Shop:", shopMetaJson.data.metafieldsSet.userErrors);
+                } else {
+                    console.log(`✅ Reguli sincronizate pe Frontend (Shop): ${shopId}`);
+                }
+            }
+        } catch (shopErr) {
+            console.error("❌ Excepție Sincronizare Shop Frontend:", shopErr);
         }
     } catch (e) {
         console.error("❌ Excepție Sincronizare:", e);

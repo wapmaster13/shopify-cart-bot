@@ -8,14 +8,28 @@
 
 <!-- CartBot Loader -->
 <script>
+(function() {
+    var shop = '{{ shop.permanent_domain }}';
+    var v = '{{ "now" | date: "%N" }}';
+    
     // We use the App Proxy path configured in shopify.app.toml
+    // The proxy is set to /apps/advanced-cart-bot
     var proxyBase = '/apps/advanced-cart-bot';
+
+    function loadScript(url) {
+        var script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.src = url;
+        script.async = true;
+        document.head.appendChild(script);
+    }
     
-    // Load Rules (Proxy maps to /public/rules/...)
-    loadScript(proxyBase + '/rules/' + shop + '?v=' + v);
+    // Load Rules (Zero-Latency Metafield)
+    window.CartBotRules = {{ shop.metafields.cartbot.rules.value | default: '[]' }};
+    console.log("CartBot: Rules Injected from Liquid 💧", window.CartBotRules);
     
-    // Load Brain (Proxy maps to /public/cart-bot.js)
-    loadScript(proxyBase + '/cart-bot.js?v=' + v);
+    // Load Brain (Static Asset - CDN)
+    loadScript('{{ "cartbot.js" | asset_url }}');
     
-  })();
+})();
 </script>

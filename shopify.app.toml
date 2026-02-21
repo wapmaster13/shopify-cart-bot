@@ -29,6 +29,5 @@ api_version = "2024-07"
 embedded = false
 
 [app_proxy]
-url = "https://unknown-tune-presenting-michael.trycloudflare.com/public"
 subpath = "advanced-cart-bot"
 prefix = "apps"
