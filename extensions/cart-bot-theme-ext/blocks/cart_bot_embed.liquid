@@ -6,30 +6,32 @@
 }
 {% endschema %}
 
-<!-- CartBot Loader -->
+<style>
+  .shopify-payment-button,
+  [data-shopify="payment-button"] {
+    display: none !important;
+  }
+</style>
+
 <script>
 (function() {
-    var shop = '{{ shop.permanent_domain }}';
-    var v = '{{ "now" | date: "%N" }}';
-    
-    // We use the App Proxy path configured in shopify.app.toml
-    // The proxy is set to /apps/advanced-cart-bot
-    var proxyBase = '/apps/advanced-cart-bot';
+  var shop = "{{ shop.permanent_domain }}";
+  var v = "{{ shop.metafields.cartbot.last_updated.value | default: '1' }}";
+  var serverUrl = 'https://nonidiomatic-verda-direly.ngrok-free.dev'; // Stable Ngrok URL
 
-    function loadScript(url) {
-        var script = document.createElement('script');
-        script.type = 'text/javascript';
-        script.src = url;
-        script.async = true;
-        document.head.appendChild(script);
-    }
-    
-    // Load Rules (Zero-Latency Metafield)
-    window.CartBotRules = {{ shop.metafields.cartbot.rules.value | default: '[]' }};
-    console.log("CartBot: Rules Injected from Liquid 💧", window.CartBotRules);
-    
-    // Load Brain (Static Asset - CDN)
-    loadScript('{{ "cartbot.js" | asset_url }}');
-    
+  function loadScript(url, callback) {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = url;
+    script.defer = true;
+    if (callback) script.onload = callback;
+    script.onerror = function() { console.error("CartBot: Failed to load " + url); };
+    document.head.appendChild(script);
+  }
+
+  // Simple direct loads
+  loadScript(serverUrl + '/public/rules/' + shop + '?v=' + v, function() {
+    loadScript(serverUrl + '/public/cart-bot/js?shop=' + shop + '&v=' + v);
+  });
 })();
 </script>

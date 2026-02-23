@@ -15,7 +15,7 @@ import {
     Bot, Zap, Gift, ShieldCheck, Cpu,
     Calendar, Lock, ArrowRight, Plus, X,
     ShoppingCart, Package, Archive, Layers,
-    AlertCircle, CheckCircle2, RotateCcw, MonitorPlay
+    AlertCircle, CheckCircle2, RotateCcw, MonitorPlay, Bell
 } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 
@@ -55,6 +55,12 @@ export async function action({ request }: { request: Request }) {
     const ajaxOnly = formData.get("ajaxOnly") === "on";
     const applyForEachCondition = formData.get("applyForEachCondition") === "on";
 
+    // Notifications
+    const notificationEnabled = formData.get("notificationEnabled") === "on";
+    const notificationText = formData.get("notificationText") as string || "Free gift added to your order!";
+    const notificationBgColor = formData.get("notificationBgColor") as string || "#1a1a1a";
+    const notificationTextColor = formData.get("notificationTextColor") as string || "#ffffff";
+
     // Scheduling
     const startDateRaw = formData.get("startDate") as string;
     const endDateRaw = formData.get("endDate") as string;
@@ -92,6 +98,10 @@ export async function action({ request }: { request: Request }) {
                 reverseLogic,
                 ajaxOnly,
                 applyForEachCondition,
+                notificationEnabled,
+                notificationText,
+                notificationBgColor,
+                notificationTextColor,
                 startDate,
                 endDate,
                 isActive: status === "ACTIVE"
@@ -120,7 +130,7 @@ const glassContainer = {
     overflow: "hidden"
 };
 
-const sectionVariants = {
+const sectionVariants: any = {
     hidden: { opacity: 0, y: 30 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
 };
@@ -213,17 +223,25 @@ export default function BotArchitect() {
     // 2. Triggers
     const [triggerType, setTriggerType] = useState("PRODUCTS");
     const [triggerProducts, setTriggerProducts] = useState<any[]>([]);
-    const [minCartValue, setMinCartValue] = useState("0");
-    const [minQuantity, setMinQuantity] = useState("0");
-    const [maxQuantity, setMaxQuantity] = useState("999999");
+    const [triggerProductIds, setTriggerProductIds] = useState<string[]>([]);
+    const [minCartValue, setMinCartValue] = useState("");
+    const [minQuantity, setMinQuantity] = useState("");
+    const [maxQuantity, setMaxQuantity] = useState("");
     const [replaceTriggerItems, setReplaceTriggerItems] = useState(false);
 
     // 3. Actions
     const [giftProducts, setGiftProducts] = useState<any[]>([]);
+    const [giftProductIds, setGiftProductIds] = useState<string[]>([]);
     const [applyIfAlreadyInCart, setApplyIfAlreadyInCart] = useState(false);
 
     // 4. Compliance
     const [requireConsent, setRequireConsent] = useState(false);
+
+    // 6. Notifications
+    const [notificationEnabled, setNotificationEnabled] = useState(true);
+    const [notificationText, setNotificationText] = useState("Free gift added to your order!");
+    const [notificationBgColor, setNotificationBgColor] = useState("#1a1a1a");
+    const [notificationTextColor, setNotificationTextColor] = useState("#ffffff");
 
     // 5. Logic
     const [oncePerSession, setOncePerSession] = useState(false);
@@ -234,8 +252,7 @@ export default function BotArchitect() {
     // --- Handlers ---
 
     const handleResourcePicker = async (type: 'trigger' | 'gift') => {
-        // @ts-ignore
-        const selected = await shopify.resourcePicker({ type: 'product', multiple: true, action: 'select' });
+        const selected = (await shopify.resourcePicker({ type: 'product', multiple: true, action: 'select' })) as any;
 
         if (selected) {
             const items = Array.isArray(selected) ? selected : selected.selection;
@@ -246,8 +263,13 @@ export default function BotArchitect() {
                 image: p.images?.[0]?.originalSrc
             })));
 
-            if (type === 'trigger') setTriggerProducts([...triggerProducts, ...variants]);
-            else setGiftProducts([...giftProducts, ...variants]);
+            if (type === 'trigger') {
+                setTriggerProducts(variants); // For display
+                setTriggerProductIds(variants.map((v: any) => v.id)); // For save
+            } else {
+                setGiftProducts(variants);
+                setGiftProductIds(variants.map((v: any) => v.id));
+            }
         }
     };
 
@@ -263,16 +285,21 @@ export default function BotArchitect() {
         }
 
         fd.append("triggerType", triggerType);
-        fd.append("triggerProductIds", JSON.stringify(triggerProducts.map(p => p.id)));
+        fd.append("triggerProductIds", JSON.stringify(triggerProductIds));
         if (replaceTriggerItems) fd.append("replaceTriggerItems", "on");
         fd.append("minCartValue", minCartValue);
         fd.append("minQuantity", minQuantity);
         fd.append("maxQuantity", maxQuantity);
 
-        fd.append("giftVariantIds", JSON.stringify(giftProducts.map(p => p.id)));
+        fd.append("giftVariantIds", JSON.stringify(giftProductIds));
         if (applyIfAlreadyInCart) fd.append("applyIfAlreadyInCart", "on");
 
         if (requireConsent) fd.append("requireConsent", "on");
+
+        if (notificationEnabled) fd.append("notificationEnabled", "on");
+        fd.append("notificationText", notificationText);
+        fd.append("notificationBgColor", notificationBgColor);
+        fd.append("notificationTextColor", notificationTextColor);
 
         // Logic
         if (oncePerSession) fd.append("oncePerSession", "on");
@@ -317,15 +344,15 @@ export default function BotArchitect() {
                                 autoComplete="off"
                             />
                             <InlineStack align="space-between" gap="400">
-                                <Box flex="1">
+                                <div style={{ flex: 1 }}>
                                     <Select
                                         label="Status"
                                         options={[{ label: "Active", value: "ACTIVE" }, { label: "Paused", value: "PAUSED" }]}
                                         value={status}
                                         onChange={setStatus}
                                     />
-                                </Box>
-                                <Box flex="1">
+                                </div>
+                                <div style={{ flex: 1 }}>
                                     <TextField
                                         label="Priority Sequence"
                                         type="number"
@@ -334,7 +361,7 @@ export default function BotArchitect() {
                                         autoComplete="off"
                                         helpText="Lower numbers run first"
                                     />
-                                </Box>
+                                </div>
                             </InlineStack>
                             <Divider />
                             <InlineStack align="space-between" blockAlign="center">
@@ -492,6 +519,80 @@ export default function BotArchitect() {
                                                     <div style={{ padding: "6px 12px", border: "1px solid #ccc", borderRadius: "6px", fontSize: "0.8rem" }}>No thanks</div>
                                                 </div>
                                             </motion.div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </BlockStack>
+                    </GlassCard>
+
+                    {/* SECTION 6: NOTIFICATIONS */}
+                    <GlassCard>
+                        <SectionHeader icon={Bell} title="User Experience" description="Customize what the buyer sees when they get a gift." />
+                        <BlockStack gap="400">
+                            <InlineStack align="space-between" blockAlign="center">
+                                <Text as="span" variant="bodyMd">Enable Gift Popup</Text>
+                                <Checkbox label="" checked={notificationEnabled} onChange={setNotificationEnabled} />
+                            </InlineStack>
+                            <AnimatePresence>
+                                {notificationEnabled && (
+                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+                                        <div style={{ marginTop: "16px" }}>
+                                            <TextField
+                                                label="Popup Message"
+                                                value={notificationText}
+                                                onChange={setNotificationText}
+                                                maxLength={60}
+                                                autoComplete="off"
+                                                helpText="Keep it short and exciting!"
+                                            />
+
+                                            <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Background Color</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input
+                                                            type="color"
+                                                            value={notificationBgColor}
+                                                            onChange={(e) => setNotificationBgColor(e.target.value)}
+                                                            style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
+                                                        />
+                                                        <TextField label="" value={notificationBgColor.toUpperCase()} onChange={setNotificationBgColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Text Color</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input
+                                                            type="color"
+                                                            value={notificationTextColor}
+                                                            onChange={(e) => setNotificationTextColor(e.target.value)}
+                                                            style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
+                                                        />
+                                                        <TextField label="" value={notificationTextColor.toUpperCase()} onChange={setNotificationTextColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                            </div>
+
+                                            <div style={{ marginTop: "24px" }}>
+                                                <Text as="span" variant="bodyMd" tone="subdued">Live Preview</Text>
+                                                <div style={{
+                                                    marginTop: "8px",
+                                                    backgroundColor: notificationBgColor,
+                                                    color: notificationTextColor,
+                                                    padding: '12px 24px',
+                                                    borderRadius: '8px',
+                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                                                    fontSize: '14px',
+                                                    fontWeight: '500',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px'
+                                                }}>
+                                                    <span>🎁</span> <span>{notificationText || "Free gift added to your order!"}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </motion.div>
                                 )}

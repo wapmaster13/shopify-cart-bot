@@ -31,7 +31,7 @@ export default defineConfig({
     server: {
         port: Number(process.env.PORT || 3000),
         allowedHosts: true,
-        hmr: process.env.SHOPIFY_APP_URL
+        hmr: (process.env.SHOPIFY_APP_URL && process.env.SHOPIFY_APP_URL !== "undefined")
             ? {
                 protocol: "wss",
                 host: new URL(process.env.SHOPIFY_APP_URL).hostname,

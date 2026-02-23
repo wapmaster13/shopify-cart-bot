@@ -17,3 +17,8 @@ scopes = "read_cart_transforms,read_orders,read_products,write_cart_transforms,w
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
+
+[app_proxy]
+url = "https://nonidiomatic-verda-direly.ngrok-free.dev"
+subpath = "advanced-cart-bot"
+prefix = "apps"

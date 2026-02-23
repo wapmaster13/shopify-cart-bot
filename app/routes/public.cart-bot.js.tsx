@@ -180,22 +180,26 @@ export function loader() {
 
 
   // --- 2. Notification System ---
-  function showGiftToaster() {
+  function showGiftToaster(text, bgColor = '#1a1a1a', textColor = '#ffffff') {
+     if (!text) return;
      let toaster = document.getElementById('cart-bot-toaster');
      if (!toaster) {
          toaster = document.createElement('div');
          toaster.id = 'cart-bot-toaster';
          Object.assign(toaster.style, {
              position: 'fixed', bottom: '20px', right: '20px', zIndex: '2147483647', // Max Z-Index
-             backgroundColor: '#1a1a1a', color: '#fff', padding: '12px 24px',
+             backgroundColor: bgColor, color: textColor, padding: '12px 24px',
              borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
              transform: 'translateY(150%)', transition: 'transform 0.4s ease-out',
              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif', 
              fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px'
          });
-         toaster.innerHTML = '<span>🎁</span> <span>Free gift added to your order!</span>';
          document.body.appendChild(toaster);
+     } else {
+         toaster.style.backgroundColor = bgColor;
+         toaster.style.color = textColor;
      }
+     toaster.innerHTML = '<span>🎁</span> <span>' + text + '</span>';
      requestAnimationFrame(() => toaster.style.transform = 'translateY(0)');
      setTimeout(() => { toaster.style.transform = 'translateY(150%)'; }, 4000);
   }
@@ -227,7 +231,16 @@ export function loader() {
       
       const hasGift = cart.items.some(item => item.final_price === 0);
       if (hasGift && !window.CartBotGiftShown) {
-           showGiftToaster();
+           const rules = window.CartBotRules || [];
+           const rule = rules.length > 0 ? rules[0] : null;
+           const isEnabled = rule && rule.notificationEnabled !== undefined ? rule.notificationEnabled : true;
+           const message = rule && rule.notificationText ? rule.notificationText : 'Free gift added to your order!';
+           const bgColor = rule && rule.notificationBgColor ? rule.notificationBgColor : '#1a1a1a';
+           const textColor = rule && rule.notificationTextColor ? rule.notificationTextColor : '#ffffff';
+
+           if (isEnabled) {
+               showGiftToaster(message, bgColor, textColor);
+           }
            window.CartBotGiftShown = true;
       }
 
@@ -265,8 +278,6 @@ export function loader() {
       const hasValueRules = rules.some(r => r.triggerType === 'CART_VALUE' || r.triggerType === 'COMBINED');
       if (hasValueRules) shouldTrigger = true;
 
-      if (!shouldTrigger && rules.length > 0) shouldTrigger = true; // Fallback
-
       if (shouldTrigger) {
           triggerSync();
       }
@@ -274,105 +285,277 @@ export function loader() {
 
 
   // --- 5. Aggressive Interceptors (Monkey-Patching) ---
-  const originalFetch = window.fetch;
-  window.fetch = async function (...args) {
-      let url = args[0] && (typeof args[0] === 'string' ? args[0] : args[0].url);
+
+  // --- 5. Aggressive Interceptors (Post-Add) ---
+  
+  window._cartBotAddingGift = false;
+
+  async function injectGiftAsync(addedIds) {
+      if (window._cartBotAddingGift) return;
       
-      // Loop Prevention
-      if (url && url.includes('cartbot-cart-call')) {
-          return originalFetch.apply(this, args);
+      const rules = window.CartBotRules || [];
+      if (rules.length === 0) return;
+
+      const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
+
+      window._cartBotAddingGift = true;
+      try {
+          // 1. Fetch Latest Cart State
+          const cartRes = await fetch(window.Shopify.routes.root + 'cart.js');
+          const cart = await cartRes.json();
+          const cartTotal = cart.total_price / 100;
+          
+          let giftVariantIdsToAdd = [];
+
+          // 2. Evaluate Rules Dynamically
+          for (const rule of rules) {
+              let isMatch = false;
+
+              // Matching Logic
+              if (rule.triggerType === 'CART_VALUE') {
+                  isMatch = cartTotal >= parseFloat(rule.minCartValue || 0);
+              } 
+              else if (rule.triggerType === 'PRODUCTS' || rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED') {
+                  const triggerIds = (rule.triggerProductIds || []).map(extractId);
+                  
+                  // Match against newly added IDs OR existing cart items
+                  const addedMatch = triggerIds.some(tid => (addedIds || []).includes(tid));
+                  const cartMatch = triggerIds.some(tid => cart.items.some(i => i.product_id === tid || i.variant_id === tid || i.id === tid));
+                  
+                  const hasProduct = addedMatch || cartMatch;
+                  
+                  if (rule.triggerType === 'COMBINED') {
+                      isMatch = hasProduct && (cartTotal >= parseFloat(rule.minCartValue || 0));
+                  } else {
+                      isMatch = hasProduct;
+                  }
+              } else {
+                  // Fallback for generic unsupported rules
+                  isMatch = false; 
+              }
+
+              if (isMatch) {
+                  const rawGifts = rule.giftVariantIds || (rule.giftVariants ? rule.giftVariants.map(v => v.id) : []);
+                  for (const rawG of rawGifts) {
+                      if (!rawG) continue;
+                      const potentialGiftId = extractId(rawG);
+                      
+                      // Check for Existing Gift
+                      const alreadyHasGift = cart.items.some(item => (item.variant_id === potentialGiftId || item.id === potentialGiftId) && item.properties && item.properties['_FreeGift']);
+                      if (!alreadyHasGift && !giftVariantIdsToAdd.includes(potentialGiftId)) {
+                          giftVariantIdsToAdd.push(potentialGiftId);
+                      }
+                  }
+                  break; 
+              }
+          }
+
+          // 5. Execute Secondary Request
+          if (giftVariantIdsToAdd.length > 0) {
+              console.log("CartBot: Intercepted theme add! Sending secondary request for gifts...", giftVariantIdsToAdd);
+              const itemsToInject = giftVariantIdsToAdd.map(id => ({
+                  id: id,
+                  quantity: 1,
+                  properties: { '_FreeGift': 'true' }
+              }));
+              
+              const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                  body: JSON.stringify({ items: itemsToInject })
+              });
+              if (res.ok) {
+                  console.log("CartBot: Successfully added gifts!");
+                  setTimeout(() => triggerSync(), 100);
+              }
+          }
+      } catch (e) {
+          console.error("CartBot: Failed to process async gift injection", e);
+      } finally {
+          setTimeout(() => { window._cartBotAddingGift = false; }, 1000); 
       }
+  }
 
-      if (url && url.includes('/cart/add')) {
-          try {
-              let init = args[1];
-              if (init && init.body) {
-                  let body = init.body;
-                  let addedIds = [];
+  window._cartBotValidating = false;
 
-                  if (typeof body === 'string') {
-                      let parsed = JSON.parse(body);
-                      let items = parsed.items ? parsed.items : [parsed];
-                      addedIds = items.map(i => Number(i.id || i.variant_id));
-                  } else if (body instanceof FormData) {
-                      const id = body.get('id');
-                      if (id) addedIds = [Number(id)];
+  async function validateCartStateAsync() {
+      if (window._cartBotValidating) return;
+      window._cartBotValidating = true;
+      try {
+          const cartRes = await fetch(window.Shopify.routes.root + 'cart.js');
+          const cart = await cartRes.json();
+          
+          const regularItems = cart.items.filter(item => !item.properties || !item.properties['_FreeGift']);
+          const giftItems = cart.items.filter(item => item.properties && item.properties['_FreeGift']);
+          
+          if (giftItems.length === 0) return;
+
+          // Scenario A: No regular items left, but gifts remain
+          if (regularItems.length === 0 && giftItems.length > 0) {
+              console.log("CartBot: Only gifts left. Clearing cart...");
+              const res = await fetch(window.Shopify.routes.root + 'cart/clear.js', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+              });
+              if (res.ok) {
+                  window._cartBotValidating = false;
+                  window.location.reload();
+                  return;
+              }
+          }
+
+          // Scenario B: Standard Validation
+          if (regularItems.length > 0 && giftItems.length > 0) {
+              const cartTotalWithoutGifts = regularItems.reduce((total, item) => total + item.final_line_price, 0) / 100;
+              const rules = window.CartBotRules || [];
+              const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
+
+              let giftsToRemove = [];
+
+              for (const giftItem of giftItems) {
+                  let isValid = false;
+
+                  for (const rule of rules) {
+                      const rawGifts = rule.giftVariantIds || (rule.giftVariants ? rule.giftVariants.map(v => v.id) : []);
+                      const ruleGiftIds = rawGifts.map(extractId);
+                      
+                      if (!ruleGiftIds.includes(giftItem.variant_id) && !ruleGiftIds.includes(giftItem.id)) continue;
+
+                      let isMatch = false;
+                      if (rule.triggerType === 'CART_VALUE') {
+                          isMatch = cartTotalWithoutGifts >= parseFloat(rule.minCartValue || 0);
+                      } 
+                      else if (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED') {
+                          const triggerIds = (rule.triggerProductIds || []).map(extractId);
+                          const cartMatch = triggerIds.some(tid => cart.items.some(i => (i.product_id === tid || i.variant_id === tid || i.id === tid) && (!i.properties || !i.properties['_FreeGift'])));
+                          
+                          if (rule.triggerType === 'COMBINED') {
+                              isMatch = cartMatch && (cartTotalWithoutGifts >= parseFloat(rule.minCartValue || 0));
+                          } else {
+                              isMatch = cartMatch;
+                          }
+                      } else {
+                          isMatch = true;
+                      }
+
+                      if (isMatch) {
+                          isValid = true;
+                          break; 
+                      }
                   }
 
-                  if (addedIds.length > 0) {
-                      const rules = window.CartBotRules || [];
-                      const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
-                      let giftsToAdd = new Set();
-                      
-                      rules.forEach(rule => {
-                          const triggerIds = (rule.triggerProductIds || []).map(extractId);
-                          const hasTrigger = triggerIds.some(tid => addedIds.includes(tid));
-                          if (hasTrigger) {
-                              const giftId = rule.giftVariantIds?.[0];
-                              if (giftId) giftsToAdd.add(extractId(giftId));
-                          }
+                  if (!isValid) {
+                      giftsToRemove.push(giftItem.key);
+                  }
+              }
+
+              if (giftsToRemove.length > 0) {
+                  console.log("CartBot: Rules no longer met! Removing unqualified gifts...", giftsToRemove);
+                  
+                  for (let key of giftsToRemove) {
+                      const res = await fetch(window.Shopify.routes.root + 'cart/change.js', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                          body: JSON.stringify({ id: key, quantity: 0 })
                       });
-
-                      if (giftsToAdd.size > 0) {
-                          const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
-                          if (debug) console.log("CartBot: 💉 Pre-Add Injection for gifts:", giftsToAdd);
-                          
-                          const itemsToAdd = Array.from(giftsToAdd).map(giftId => ({
-                              id: giftId,
-                              quantity: 1,
-                              properties: { '_FreeGift': 'true' }
-                          }));
-
-                          // Perform the Pre-Add Request
-                          await originalFetch(window.Shopify.routes.root + 'cart/add.js?cartbot-cart-call=true', {
-                              method: 'POST',
-                              headers: {
-                                  'Content-Type': 'application/json',
-                                  'Accept': 'application/json'
-                              },
-                              body: JSON.stringify({ items: itemsToAdd })
-                          });
+                      if (res.ok) {
+                          console.log("CartBot: Successfully removed unqualified gift.");
+                          setTimeout(() => triggerSync(true), 150);
                       }
                   }
               }
-          } catch (e) {
-              console.error("CartBot: Fetch Interceptor Error", e);
+          }
+      } catch (e) {
+          console.error("CartBot: Failed to validate cart state", e);
+      } finally {
+          setTimeout(() => { window._cartBotValidating = false; }, 1000); 
+      }
+  }
+
+  function extractIdsFromPayload(body) {
+      let addedIds = [];
+      try {
+          if (body instanceof FormData) {
+              const id = body.get('id');
+              if (id) addedIds.push(Number(id));
+              let i = 0;
+              while (body.get('items[' + i + '][id]')) {
+                  addedIds.push(Number(body.get('items[' + i + '][id]')));
+                  i++;
+              }
+          } else if (typeof body === 'string') {
+              if (body.includes('=') && !body.startsWith('{')) {
+                  const params = new URLSearchParams(body);
+                  const id = params.get('id');
+                  if (id) addedIds.push(Number(id));
+              } else {
+                  let parsed = JSON.parse(body);
+                  let items = parsed.items ? parsed.items : [parsed];
+                  addedIds = items.map(i => Number(i.id || i.variant_id)).filter(id => id);
+              }
+          }
+      } catch(e) {}
+      return addedIds;
+  }
+
+  const originalFetch = window.fetch;
+  window.fetch = async function (...args) {
+      let url = args[0] && (typeof args[0] === 'string' ? args[0] : args[0].url);
+      let isCartAdd = url && url.includes('/cart/add');
+      let init = args[1];
+      let addedIds = (isCartAdd && init && init.body) ? extractIdsFromPayload(init.body) : [];
+
+      if (isCartAdd && !window._cartBotAddingGift) {
+          try {
+              const response = await originalFetch.apply(this, args);
+              if (response.ok) {
+                  await injectGiftAsync(addedIds);
+              }
+              return response; 
+          } catch(e) {
+              return originalFetch.apply(this, args);
           }
       }
 
       const fetchPromise = originalFetch.apply(this, args);
-      if (url && (url.includes('/cart/add') || url.includes('/cart/update') || url.includes('/cart/change'))) {
+      
+      if (url && (url.includes('/cart/update') || url.includes('/cart/change') || url.includes('/cart/clear'))) {
           fetchPromise.then(async (response) => {
               if (response.ok) {
                   setTimeout(() => triggerSync(), 100);
-                  
-                  // Backup Sync (Optional Fallback)
-                  setTimeout(() => {
-                      if (window.pubsub) {
-                         window.pubsub.publish('cart-updated', { cart: {} });
-                      }
-                  }, 500);
+                  if (!window._cartBotAddingGift && !window._cartBotValidating) {
+                      setTimeout(() => validateCartStateAsync(), 300);
+                  }
               }
           });
       }
       return fetchPromise;
   };
 
+  const originalOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+      this._cartbotUrl = url;
+      return originalOpen.call(this, method, url, ...rest);
+  };
+
   const originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function (body) {
-    this.addEventListener('load', function () {
-      if (this.responseURL && (this.responseURL.includes('/cart/add') || this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change'))) {
-         let addedId = null;
-         try {
-             if (typeof body === 'string') {
-                 const parsed = JSON.parse(body);
-                 if (parsed.id) addedId = parsed.id;
-             }
-         } catch(e) {}
-         checkRulesAndTrigger(addedId);
-      }
-    });
-    originalSend.call(this, body);
+      let isCartAdd = this._cartbotUrl && this._cartbotUrl.includes('/cart/add');
+      let addedIds = isCartAdd ? extractIdsFromPayload(body) : [];
+
+      this.addEventListener('load', function () {
+          if (this.responseURL && this.status >= 200 && this.status < 300) {
+              if (this.responseURL.includes('/cart/add') && !window._cartBotAddingGift) {
+                  injectGiftAsync(addedIds);
+              } else if (this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear')) {
+                  setTimeout(() => triggerSync(), 100);
+                  if (!window._cartBotAddingGift && !window._cartBotValidating) {
+                      setTimeout(() => validateCartStateAsync(), 300);
+                  }
+              }
+          }
+      });
+      return originalSend.call(this, body);
   };
 
   // Init Check
@@ -384,8 +567,26 @@ export function loader() {
     return new Response(scriptContent, {
         headers: {
             "Content-Type": "application/javascript",
-            "Cache-Control": "public, max-age=3600",
-            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=31536000",
+            ...corsHeaders
         },
     });
 }
+
+// --- CORS Headers ---
+const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "ngrok-skip-browser-warning, Content-Type, Accept",
+};
+
+// --- Preflight Handler ---
+export const action = async ({ request }: { request: Request }) => {
+    if (request.method === "OPTIONS") {
+        return new Response(null, {
+            status: 204,
+            headers: corsHeaders,
+        });
+    }
+    return new Response("Method Not Allowed", { status: 405 });
+};

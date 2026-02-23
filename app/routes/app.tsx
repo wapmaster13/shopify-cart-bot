@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { Link as ReactRouterLink, Outlet, useLoaderData, useRouteError } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";

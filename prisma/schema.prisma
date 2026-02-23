@@ -51,6 +51,10 @@ model GiftRule {
   applyForEachCondition Boolean
   startDate             DateTime?
   endDate               DateTime?
+  notificationEnabled   Boolean   @default(true)
+  notificationText      String?
+  notificationBgColor   String?   @default("#1a1a1a")
+  notificationTextColor String?   @default("#ffffff")
   isActive              Boolean   @default(true)
   createdAt             DateTime  @default(now())
 }

@@ -16,14 +16,14 @@ import {
     Bot, Zap, Gift, ShieldCheck, Cpu,
     Calendar, Lock, ArrowRight, Plus, X,
     ShoppingCart, Package, Archive, Layers,
-    AlertCircle, CheckCircle2, RotateCcw, MonitorPlay, Trash2
+    AlertCircle, CheckCircle2, RotateCcw, MonitorPlay, Trash2, Bell
 } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 
 // --- Loaders & Actions ---
 
 export async function loader({ request, params }: { request: Request, params: { id: string } }) {
-    await authenticate.admin(request);
+    const { admin } = await authenticate.admin(request);
 
     const rule = await prisma.giftRule.findUnique({
         where: { id: params.id }
@@ -33,7 +33,55 @@ export async function loader({ request, params }: { request: Request, params: { 
         throw new Response("Bot not found", { status: 404 });
     }
 
-    return { rule };
+    let preloadedTriggerVariants: any[] = [];
+    let preloadedGiftVariants: any[] = [];
+
+    try {
+        const triggerIds = JSON.parse(rule.triggerProductIds || "[]");
+        const giftIds = JSON.parse(rule.giftVariantIds || "[]");
+
+        const fetchNodes = async (ids: string[]) => {
+            if (ids.length === 0) return [];
+            const chunkedIds = ids.slice(0, 50); // Safe GraphQL limit
+
+            const response = await admin.graphql(
+                `#graphql
+                query getNodes($ids: [ID!]!) {
+                    nodes(ids: $ids) {
+                        ... on ProductVariant {
+                            id
+                            title
+                            product { title }
+                        }
+                        ... on Product {
+                            id
+                            title
+                        }
+                    }
+                }`,
+                { variables: { ids: chunkedIds } }
+            );
+
+            const json = await response.json();
+            return (json.data?.nodes || []).map((node: any) => {
+                if (!node) return null;
+                if (node.product) {
+                    return {
+                        id: node.id,
+                        title: node.title === 'Default Title' ? node.product.title : `${node.product.title} - ${node.title}`
+                    };
+                }
+                return { id: node.id, title: node.title };
+            }).filter(Boolean);
+        };
+
+        preloadedTriggerVariants = await fetchNodes(triggerIds);
+        preloadedGiftVariants = await fetchNodes(giftIds);
+    } catch (e) {
+        console.error("CartBot: Failed to fetch node titles for UI", e);
+    }
+
+    return { rule, preloadedTriggerVariants, preloadedGiftVariants };
 }
 
 export async function action({ request, params }: { request: Request, params: any }) {
@@ -72,6 +120,12 @@ export async function action({ request, params }: { request: Request, params: an
     const ajaxOnly = formData.get("ajaxOnly") === "on";
     const applyForEachCondition = formData.get("applyForEachCondition") === "on";
 
+    // Notifications
+    const notificationEnabled = formData.get("notificationEnabled") === "on";
+    const notificationText = formData.get("notificationText") as string || "Free gift added to your order!";
+    const notificationBgColor = formData.get("notificationBgColor") as string || "#1a1a1a";
+    const notificationTextColor = formData.get("notificationTextColor") as string || "#ffffff";
+
     // Scheduling
     const startDateRaw = formData.get("startDate") as string;
     const endDateRaw = formData.get("endDate") as string;
@@ -109,6 +163,10 @@ export async function action({ request, params }: { request: Request, params: an
                 reverseLogic,
                 ajaxOnly,
                 applyForEachCondition,
+                notificationEnabled,
+                notificationText,
+                notificationBgColor,
+                notificationTextColor,
                 startDate,
                 endDate,
                 isActive: status === "ACTIVE"
@@ -135,7 +193,7 @@ const glassContainer = {
     overflow: "hidden"
 };
 
-const sectionVariants = {
+const sectionVariants: any = {
     hidden: { opacity: 0, y: 30 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
 };
@@ -209,7 +267,7 @@ const LogicSwitch = ({ icon: Icon, label, description, checked, onChange, color 
 // --- Main Page Component ---
 
 export default function BotArchitectEdit() {
-    const { rule } = useLoaderData<typeof loader>();
+    const { rule, preloadedTriggerVariants, preloadedGiftVariants } = useLoaderData<typeof loader>();
     const nav = useNavigation();
     const submit = useSubmit();
     const actionData = useActionData<{ error?: string }>();
@@ -228,17 +286,7 @@ export default function BotArchitectEdit() {
 
     // 2. Triggers
     const [triggerType, setTriggerType] = useState(rule.triggerType || "PRODUCTS");
-    const [triggerProducts, setTriggerProducts] = useState<any[]>([]);
-    // Effect to hydration trigger products would need resource fetching, 
-    // but for now we just store IDs. To show "Chips", strictly we need product details.
-    // In a real app we'd fetch these details. For now, we mimic presence if IDs exist.
-    // Or we rely on the IDs being passed back and forth.
-    // Let's assume we parse IDs and show a "N products selected" state if we can't fetch names easily without a specialized loader.
-    // Or we can assume the user will re-select if they want to change.
-    // Better: use a placeholder or check if we can fetch logic.
-    // For simplicity in this step: Initialize empty array but if IDs exist, show a pill saying "Product Selection Hidden (Click to Edit)"
-    // Actually, ResourcePicker can be pre-loaded with selection if we have full objects.
-    // We only have IDs. 
+    const [triggerProducts, setTriggerProducts] = useState<any[]>(preloadedTriggerVariants || []);
     const [triggerProductIds, setTriggerProductIds] = useState(JSON.parse(rule.triggerProductIds || "[]"));
 
     const [minCartValue, setMinCartValue] = useState(String(rule.minCartValue || 0));
@@ -248,10 +296,17 @@ export default function BotArchitectEdit() {
 
     // 3. Actions
     const [giftProductIds, setGiftProductIds] = useState(JSON.parse(rule.giftVariantIds || "[]"));
+    const [giftProducts, setGiftProducts] = useState<any[]>(preloadedGiftVariants || []);
     const [applyIfAlreadyInCart, setApplyIfAlreadyInCart] = useState(rule.applyIfAlreadyInCart || false);
 
     // 4. Compliance
     const [requireConsent, setRequireConsent] = useState(rule.requireConsent || false);
+
+    // 6. Notifications
+    const [notificationEnabled, setNotificationEnabled] = useState(rule.notificationEnabled ?? true);
+    const [notificationText, setNotificationText] = useState(rule.notificationText || "Free gift added to your order!");
+    const [notificationBgColor, setNotificationBgColor] = useState(rule.notificationBgColor || "#1a1a1a");
+    const [notificationTextColor, setNotificationTextColor] = useState(rule.notificationTextColor || "#ffffff");
 
     // 5. Logic
     const [oncePerSession, setOncePerSession] = useState(rule.oncePerSession || false);
@@ -267,17 +322,11 @@ export default function BotArchitectEdit() {
             triggerProductIds.map((id: string) => ({ variants: [{ id }] })) :
             giftProductIds.map((id: string) => ({ variants: [{ id }] }));
 
-        const selected = await shopify.resourcePicker({
+        const selected = (await shopify.resourcePicker({
             type: 'product',
             multiple: true,
-            action: 'select',
-            selection: {
-                ids: type === 'trigger' ? triggerProductIds.map((id: string) => ({ id })) : giftProductIds.map((id: string) => ({ id }))
-                // Note: Resource Picker 'selection' needs careful format (usually array of resources). 
-                // Passing just IDs often works or implies previous selection.
-                // For now, if we can't perfectly pre-fill, it defaults to empty picker.
-            }
-        });
+            action: 'select'
+        })) as any;
 
         if (selected) {
             const items = Array.isArray(selected) ? selected : selected.selection;
@@ -295,7 +344,7 @@ export default function BotArchitectEdit() {
                 setTriggerProducts(variants); // For display
                 setTriggerProductIds(variants.map((v: any) => v.id)); // For save
             } else {
-                // setGiftProducts(variants); 
+                setGiftProducts(variants);
                 setGiftProductIds(variants.map((v: any) => v.id));
             }
         }
@@ -313,16 +362,25 @@ export default function BotArchitectEdit() {
         }
 
         fd.append("triggerType", triggerType);
+        // FORCE the fresh arrays
         fd.append("triggerProductIds", JSON.stringify(triggerProductIds));
+
         if (replaceTriggerItems) fd.append("replaceTriggerItems", "on");
         fd.append("minCartValue", minCartValue);
         fd.append("minQuantity", minQuantity);
         fd.append("maxQuantity", maxQuantity);
 
+        // FORCE the fresh arrays
         fd.append("giftVariantIds", JSON.stringify(giftProductIds));
         if (applyIfAlreadyInCart) fd.append("applyIfAlreadyInCart", "on");
 
         if (requireConsent) fd.append("requireConsent", "on");
+
+        // Notifications
+        if (notificationEnabled) fd.append("notificationEnabled", "on");
+        fd.append("notificationText", notificationText);
+        fd.append("notificationBgColor", notificationBgColor);
+        fd.append("notificationTextColor", notificationTextColor);
 
         // Logic
         if (oncePerSession) fd.append("oncePerSession", "on");
@@ -440,7 +498,7 @@ export default function BotArchitectEdit() {
                                                         <Badge key={i} tone="info">{p.title}</Badge>
                                                     )) : (
                                                         triggerProductIds.length > 0 ?
-                                                            <Badge tone="info">{`${triggerProductIds.length} Products Selected (Hidden)`}</Badge> :
+                                                            <Badge tone="info-strong">{String(triggerProductIds.length) + " Products Defined"}</Badge> :
                                                             <Text as="p" tone="subdued">No products selected.</Text>
                                                     )}
                                                 </div>
@@ -493,6 +551,18 @@ export default function BotArchitectEdit() {
                                 <div style={{ flex: 1 }}>
                                     <Text as="h3" variant="headingSm">Gift Products</Text>
                                     <Text as="p" tone="subdued">{giftProductIds.length} items configured</Text>
+
+                                    {giftProducts.length > 0 ? (
+                                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+                                            {giftProducts.map((p, i) => <Badge key={i} tone="success">{p.title}</Badge>)}
+                                        </div>
+                                    ) : (
+                                        giftProductIds.length > 0 && (
+                                            <div style={{ marginTop: "8px" }}>
+                                                <Badge tone="success-strong">{String(giftProductIds.length) + " Gifts Defined"}</Badge>
+                                            </div>
+                                        )
+                                    )}
                                 </div>
                                 <Button onClick={() => handleResourcePicker('gift')}>Select Gifts</Button>
                             </div>
@@ -526,6 +596,80 @@ export default function BotArchitectEdit() {
                                     >
                                         <div style={{ padding: "16px", background: "#fffbeb", borderRadius: "8px", fontSize: "0.9rem", color: "#92400e" }}>
                                             <strong>Legal Note:</strong> As per Shopify requirements, you must obtain buyer consent before adding non-essential items that increase cart value.
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </BlockStack>
+                    </GlassCard>
+
+                    {/* SECTION 6: NOTIFICATIONS */}
+                    <GlassCard>
+                        <SectionHeader icon={Bell} title="User Experience" description="Customize what the buyer sees when they get a gift." />
+                        <BlockStack gap="400">
+                            <InlineStack align="space-between" blockAlign="center">
+                                <Text as="span" variant="bodyMd">Enable Gift Popup</Text>
+                                <Checkbox label="" checked={notificationEnabled} onChange={setNotificationEnabled} />
+                            </InlineStack>
+                            <AnimatePresence>
+                                {notificationEnabled && (
+                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+                                        <div style={{ marginTop: "16px" }}>
+                                            <TextField
+                                                label="Popup Message"
+                                                value={notificationText}
+                                                onChange={setNotificationText}
+                                                maxLength={60}
+                                                autoComplete="off"
+                                                helpText="Keep it short and exciting!"
+                                            />
+
+                                            <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Background Color</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input
+                                                            type="color"
+                                                            value={notificationBgColor}
+                                                            onChange={(e) => setNotificationBgColor(e.target.value)}
+                                                            style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
+                                                        />
+                                                        <TextField label="" value={notificationBgColor.toUpperCase()} onChange={setNotificationBgColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Text Color</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input
+                                                            type="color"
+                                                            value={notificationTextColor}
+                                                            onChange={(e) => setNotificationTextColor(e.target.value)}
+                                                            style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
+                                                        />
+                                                        <TextField label="" value={notificationTextColor.toUpperCase()} onChange={setNotificationTextColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                            </div>
+
+                                            <div style={{ marginTop: "24px" }}>
+                                                <Text as="span" variant="bodyMd" tone="subdued">Live Preview</Text>
+                                                <div style={{
+                                                    marginTop: "8px",
+                                                    backgroundColor: notificationBgColor,
+                                                    color: notificationTextColor,
+                                                    padding: '12px 24px',
+                                                    borderRadius: '8px',
+                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                                                    fontSize: '14px',
+                                                    fontWeight: '500',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px'
+                                                }}>
+                                                    <span>🎁</span> <span>{notificationText || "Free gift added to your order!"}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </motion.div>
                                 )}

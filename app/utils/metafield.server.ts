@@ -30,6 +30,10 @@ export async function syncGiftRules(admin: any, shop: string) {
             triggerProductIds: r.triggerProductIds ? JSON.parse(r.triggerProductIds) : [],
             giftVariantIds: r.giftVariantIds ? JSON.parse(r.giftVariantIds) : [],
             applyIfAlreadyInCart: r.applyIfAlreadyInCart,
+            notificationEnabled: r.notificationEnabled ?? true,
+            notificationText: r.notificationText || "Free gift added to your order!",
+            notificationBgColor: r.notificationBgColor || "#1a1a1a",
+            notificationTextColor: r.notificationTextColor || "#ffffff",
             isActive: true
         }));
 
@@ -77,13 +81,22 @@ export async function syncGiftRules(admin: any, shop: string) {
                     }`,
                     {
                         variables: {
-                            metafields: [{
-                                ownerId: shopId,
-                                namespace: "cartbot",
-                                key: "rules",
-                                type: "json",
-                                value: JSON.stringify(rulesData)
-                            }]
+                            metafields: [
+                                {
+                                    ownerId: shopId,
+                                    namespace: "cartbot",
+                                    key: "rules",
+                                    type: "json",
+                                    value: JSON.stringify(rulesData)
+                                },
+                                {
+                                    ownerId: shopId,
+                                    namespace: "cartbot",
+                                    key: "last_updated",
+                                    type: "number_integer",
+                                    value: Math.floor(Date.now() / 1000).toString()
+                                }
+                            ]
                         }
                     }
                 );

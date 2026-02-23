@@ -128,6 +128,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             triggerProductIds: triggerIds,
             giftVariantIds: giftIds,
             applyIfAlreadyInCart: rule.applyIfAlreadyInCart,
+            // Notifications
+            notificationEnabled: rule.notificationEnabled,
+            notificationText: rule.notificationText,
+            notificationBgColor: rule.notificationBgColor,
+            notificationTextColor: rule.notificationTextColor,
         };
     });
 
@@ -144,8 +149,26 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return new Response(jsContent, {
         headers: {
             "Content-Type": "application/javascript",
-            "Cache-Control": "public, max-age=60",
-            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=31536000",
+            ...corsHeaders
         },
     });
 }
+
+// --- CORS Headers ---
+const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "ngrok-skip-browser-warning, Content-Type, Accept",
+};
+
+// --- Preflight Handler ---
+export const action = async ({ request }: { request: Request }) => {
+    if (request.method === "OPTIONS") {
+        return new Response(null, {
+            status: 204,
+            headers: corsHeaders,
+        });
+    }
+    return new Response("Method Not Allowed", { status: 405 });
+};
