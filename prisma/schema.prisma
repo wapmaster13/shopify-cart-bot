@@ -40,6 +40,7 @@ model GiftRule {
   minCartValue          Float
   minQuantity           Int
   maxQuantity           Int
+  countGlobalQuantity   Boolean   @default(false)
   replaceTriggerItems   Boolean
   giftVariantId         String?   // Legacy/Unused
   giftVariantIds        String    // JSON

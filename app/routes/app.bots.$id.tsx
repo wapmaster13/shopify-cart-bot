@@ -108,6 +108,7 @@ export async function action({ request, params }: { request: Request, params: an
     const minCartValue = parseFloat(formData.get("minCartValue") as string || "0");
     const minQuantity = parseInt(formData.get("minQuantity") as string || "0");
     const maxQuantity = parseInt(formData.get("maxQuantity") as string || "999999");
+    const countGlobalQuantity = formData.get("countGlobalQuantity") === "on";
 
     // Actions
     const giftVariantIds = formData.get("giftVariantIds") as string; // JSON
@@ -170,6 +171,7 @@ export async function action({ request, params }: { request: Request, params: an
                 minCartValue,
                 minQuantity,
                 maxQuantity,
+                countGlobalQuantity,
                 replaceTriggerItems,
                 giftVariantIds,
                 applyIfAlreadyInCart,
@@ -316,6 +318,7 @@ export default function BotArchitectEdit() {
     const [minCartValue, setMinCartValue] = useState(String(rule.minCartValue || 0));
     const [minQuantity, setMinQuantity] = useState(String(rule.minQuantity || 0));
     const [maxQuantity, setMaxQuantity] = useState(String(rule.maxQuantity || 999999));
+    const [countGlobalQuantity, setCountGlobalQuantity] = useState(rule.countGlobalQuantity || false);
     const [replaceTriggerItems, setReplaceTriggerItems] = useState(rule.replaceTriggerItems || false);
 
     // 3. Actions
@@ -393,6 +396,7 @@ export default function BotArchitectEdit() {
         fd.append("minCartValue", minCartValue);
         fd.append("minQuantity", minQuantity);
         fd.append("maxQuantity", maxQuantity);
+        if (countGlobalQuantity) fd.append("countGlobalQuantity", "on");
 
         // FORCE the fresh arrays
         fd.append("giftVariantIds", JSON.stringify(giftProductIds));
@@ -564,6 +568,14 @@ export default function BotArchitectEdit() {
                                                 <TextField label="Min Quantity" type="number" value={minQuantity} onChange={setMinQuantity} autoComplete="off" />
                                                 <TextField label="Max Quantity" type="number" value={maxQuantity} onChange={setMaxQuantity} autoComplete="off" />
                                             </InlineStack>
+                                            <div style={{ marginTop: "16px" }}>
+                                                <Checkbox
+                                                    label="Count TOTAL items in cart (If unchecked, rule applies per individual product quantity)"
+                                                    checked={countGlobalQuantity}
+                                                    onChange={setCountGlobalQuantity}
+                                                />
+                                                <input type="hidden" name="countGlobalQuantity" value={countGlobalQuantity ? "on" : "off"} />
+                                            </div>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>

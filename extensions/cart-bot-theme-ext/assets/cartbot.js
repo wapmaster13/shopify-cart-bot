@@ -355,6 +355,26 @@
                 if (rule.triggerType === 'CART_VALUE') {
                     isMatch = cartTotal >= parseFloat(rule.minCartValue || 0);
                 }
+                else if (rule.triggerType === 'QUANTITY') {
+                    if (rule.countGlobalQuantity) {
+                        let totalQualifyingQty = 0;
+                        cart.items.forEach(item => {
+                            const isGift = item.properties && item.properties['_FreeGift'];
+                            if (!isGift) {
+                                totalQualifyingQty += item.quantity;
+                            }
+                        });
+                        isMatch = totalQualifyingQty >= (rule.minQuantity || 0) && totalQualifyingQty <= (rule.maxQuantity || 999999);
+                    } else {
+                        isMatch = cart.items.some(item => {
+                            const isGift = item.properties && item.properties['_FreeGift'];
+                            if (!isGift) {
+                                return item.quantity >= (rule.minQuantity || 0) && item.quantity <= (rule.maxQuantity || 999999);
+                            }
+                            return false;
+                        });
+                    }
+                }
                 else if (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED') {
                     const triggerIds = (rule.triggerProductIds || []).map(extractId);
 
@@ -464,6 +484,17 @@
                         let isMatch = false;
                         if (rule.triggerType === 'CART_VALUE') {
                             isMatch = cartTotalWithoutGifts >= parseFloat(rule.minCartValue || 0);
+                        }
+                        else if (rule.triggerType === 'QUANTITY') {
+                            if (rule.countGlobalQuantity) {
+                                let totalQualifyingQty = 0;
+                                regularItems.forEach(item => {
+                                    totalQualifyingQty += item.quantity;
+                                });
+                                isMatch = totalQualifyingQty >= (rule.minQuantity || 0) && totalQualifyingQty <= (rule.maxQuantity || 999999);
+                            } else {
+                                isMatch = regularItems.some(item => item.quantity >= (rule.minQuantity || 0) && item.quantity <= (rule.maxQuantity || 999999));
+                            }
                         }
                         else if (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED') {
                             const triggerIds = (rule.triggerProductIds || []).map(extractId);

@@ -127,6 +127,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             triggerType: rule.triggerType,
             triggerProducts: hydratedTriggers,
             minCartValue: rule.minCartValue,
+            minQuantity: rule.minQuantity,
+            maxQuantity: rule.maxQuantity,
+            countGlobalQuantity: rule.countGlobalQuantity,
             giftVariants: hydratedGifts,
             // Legacy/Simple IDs for quick checks
             triggerProductIds: triggerIds,
