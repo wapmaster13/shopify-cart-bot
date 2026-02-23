@@ -209,6 +209,8 @@ export function loader() {
     if (STATE.isSyncing && !force) return;
     if (!consumeToken() && !force) return;
 
+    window.CartBotRefreshUI = () => syncCartUI(true);
+
     STATE.isSyncing = true;
     const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
 
@@ -233,15 +235,23 @@ export function loader() {
       if (hasGift && !window.CartBotGiftShown) {
            const rules = window.CartBotRules || [];
            const rule = rules.length > 0 ? rules[0] : null;
-           const isEnabled = rule && rule.notificationEnabled !== undefined ? rule.notificationEnabled : true;
-           const message = rule && rule.notificationText ? rule.notificationText : 'Free gift added to your order!';
-           const bgColor = rule && rule.notificationBgColor ? rule.notificationBgColor : '#1a1a1a';
-           const textColor = rule && rule.notificationTextColor ? rule.notificationTextColor : '#ffffff';
+           
+           if (rule) {
+               // Verify Schedule
+               const now = Date.now();
+               if (rule.startDate && now < rule.startDate) return;
+               if (rule.endDate && now > rule.endDate) return;
 
-           if (isEnabled) {
-               showGiftToaster(message, bgColor, textColor);
+               const isEnabled = rule.notificationEnabled !== undefined ? rule.notificationEnabled : true;
+               const message = rule.notificationText ? rule.notificationText : 'Free gift added to your order!';
+               const bgColor = rule.notificationBgColor ? rule.notificationBgColor : '#1a1a1a';
+               const textColor = rule.notificationTextColor ? rule.notificationTextColor : '#ffffff';
+
+               if (isEnabled) {
+                   showGiftToaster(message, bgColor, textColor);
+               }
+               window.CartBotGiftShown = true;
            }
-           window.CartBotGiftShown = true;
       }
 
     } catch (e) {

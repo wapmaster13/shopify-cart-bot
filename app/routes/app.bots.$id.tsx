@@ -129,8 +129,23 @@ export async function action({ request, params }: { request: Request, params: an
     // Scheduling
     const startDateRaw = formData.get("startDate") as string;
     const endDateRaw = formData.get("endDate") as string;
-    const startDate = startDateRaw ? new Date(startDateRaw) : null;
-    const endDate = endDateRaw ? new Date(endDateRaw) : null;
+    const isScheduled = formData.has("startDate") || formData.has("endDate");
+    const startDate = startDateRaw && isScheduled ? new Date(startDateRaw) : null;
+    const endDate = endDateRaw && isScheduled ? new Date(endDateRaw) : null;
+
+    // Time-Evaluation Engine: Auto-Revive or Auto-Expire based on newly saved dates
+    const now = new Date();
+    let finalStatus = status;
+
+    if (finalStatus === "EXPIRED") {
+        if (!isScheduled || !endDate || endDate > now) {
+            finalStatus = "ACTIVE";
+        }
+    } else if (finalStatus === "ACTIVE") {
+        if (isScheduled && endDate && endDate < now) {
+            finalStatus = "EXPIRED";
+        }
+    }
 
     if (!name) return Response.json({ error: "Bot name is required" }, { status: 400 });
 
@@ -148,7 +163,7 @@ export async function action({ request, params }: { request: Request, params: an
             data: {
                 shop,
                 name,
-                status,
+                status: finalStatus,
                 priority,
                 triggerType,
                 triggerProductIds,
@@ -169,7 +184,7 @@ export async function action({ request, params }: { request: Request, params: an
                 notificationTextColor,
                 startDate,
                 endDate,
-                isActive: status === "ACTIVE"
+                isActive: finalStatus === "ACTIVE"
             }
         });
 
@@ -276,13 +291,22 @@ export default function BotArchitectEdit() {
 
     // --- State Initialization with Rule Data ---
 
+    const formatDateTimeLocal = (dateString?: string | Date | null) => {
+        if (!dateString) return "";
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) return "";
+        // adjust to local time string for the input
+        const local = new Date(d.getTime() - (d.getTimezoneOffset() * 60000));
+        return local.toISOString().slice(0, 16);
+    };
+
     // 1. Identity
     const [name, setName] = useState(rule.name);
-    const [status, setStatus] = useState(rule.status || "ACTIVE");
-    const [priority, setPriority] = useState(String(rule.priority || 0));
-    const [isScheduled, setIsScheduled] = useState(!!rule.startDate);
-    const [startDate, setStartDate] = useState(rule.startDate ? new Date(rule.startDate).toISOString().slice(0, 10) : "");
-    const [endDate, setEndDate] = useState(rule.endDate ? new Date(rule.endDate).toISOString().slice(0, 10) : "");
+    const [status, setStatus] = useState(rule.status);
+    const [priority, setPriority] = useState(rule.priority.toString());
+    const [isScheduled, setIsScheduled] = useState(!!rule.startDate || !!rule.endDate);
+    const [startDate, setStartDate] = useState(formatDateTimeLocal(rule.startDate));
+    const [endDate, setEndDate] = useState(formatDateTimeLocal(rule.endDate));
 
     // 2. Triggers
     const [triggerType, setTriggerType] = useState(rule.triggerType || "PRODUCTS");
@@ -432,7 +456,11 @@ export default function BotArchitectEdit() {
                                     <div style={{ flex: 1 }}>
                                         <Select
                                             label="Status"
-                                            options={[{ label: "Active", value: "ACTIVE" }, { label: "Paused", value: "PAUSED" }]}
+                                            options={[
+                                                { label: "Active", value: "ACTIVE" },
+                                                { label: "Paused", value: "PAUSED" },
+                                                ...(rule.status === "EXPIRED" ? [{ label: "Expired", value: "EXPIRED", disabled: true }] : [])
+                                            ]}
                                             value={status}
                                             onChange={setStatus}
                                         />
@@ -464,8 +492,8 @@ export default function BotArchitectEdit() {
                                 {isScheduled && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
                                         <InlineStack gap="400">
-                                            <div style={{ flex: 1 }}><TextField type="date" label="Start Date" value={startDate} onChange={setStartDate} autoComplete="off" /></div>
-                                            <div style={{ flex: 1 }}><TextField type="date" label="End Date" value={endDate} onChange={setEndDate} autoComplete="off" /></div>
+                                            <div style={{ flex: 1 }}><TextField type="datetime-local" label="Start Date & Time" value={startDate} onChange={setStartDate} autoComplete="off" /></div>
+                                            <div style={{ flex: 1 }}><TextField type="datetime-local" label="End Date & Time" value={endDate} onChange={setEndDate} autoComplete="off" /></div>
                                         </InlineStack>
                                     </motion.div>
                                 )}

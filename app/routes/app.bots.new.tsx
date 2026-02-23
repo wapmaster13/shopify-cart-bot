@@ -77,12 +77,23 @@ export async function action({ request }: { request: Request }) {
         }
     }
 
+    // Time-Evaluation Engine
+    const now = new Date();
+    let finalStatus = status;
+    const isScheduled = formData.has("startDate") || formData.has("endDate");
+
+    if (finalStatus === "ACTIVE") {
+        if (isScheduled && endDate && endDate < now) {
+            finalStatus = "EXPIRED";
+        }
+    }
+
     try {
         const rule = await prisma.giftRule.create({
             data: {
                 shop,
                 name,
-                status,
+                status: finalStatus,
                 priority,
                 triggerType,
                 triggerProductIds,
@@ -104,7 +115,7 @@ export async function action({ request }: { request: Request }) {
                 notificationTextColor,
                 startDate,
                 endDate,
-                isActive: status === "ACTIVE"
+                isActive: finalStatus === "ACTIVE"
             }
         });
 
@@ -376,8 +387,8 @@ export default function BotArchitect() {
                                 {isScheduled && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
                                         <InlineStack gap="400">
-                                            <div style={{ flex: 1 }}><TextField type="date" label="Start Date" value={startDate} onChange={setStartDate} autoComplete="off" /></div>
-                                            <div style={{ flex: 1 }}><TextField type="date" label="End Date" value={endDate} onChange={setEndDate} autoComplete="off" /></div>
+                                            <div style={{ flex: 1 }}><TextField type="datetime-local" label="Start Date & Time" value={startDate} onChange={setStartDate} autoComplete="off" /></div>
+                                            <div style={{ flex: 1 }}><TextField type="datetime-local" label="End Date & Time" value={endDate} onChange={setEndDate} autoComplete="off" /></div>
                                         </InlineStack>
                                     </motion.div>
                                 )}

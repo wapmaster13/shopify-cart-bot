@@ -3,13 +3,33 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { useLoaderData, Link } from "@remix-run/react";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
-import { ensureCartTransform } from "../utils/metafield.server";
+import { ensureCartTransform, syncGiftRules } from "../utils/metafield.server";
 
 export async function loader({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
-  // Fetch rules from Prisma
+  // 1. Auto-expire bots that have passed their End Date
+  const now = new Date();
+  const expiredBots = await prisma.giftRule.updateMany({
+    where: {
+      shop: session.shop,
+      status: "ACTIVE",
+      endDate: { lt: now }
+    },
+    data: {
+      status: "EXPIRED",
+      isActive: false
+    }
+  });
+
+  if (expiredBots.count > 0) {
+    console.log(`Auto-expired ${expiredBots.count} bots for ${session.shop}`);
+    await syncGiftRules(admin, session.shop);
+  }
+
+  // 2. Fetch rules to display
   const rules = await prisma.giftRule.findMany({
+    where: { shop: session.shop },
     orderBy: { createdAt: 'desc' }
   });
 
@@ -78,7 +98,7 @@ export async function action({ request }: { request: Request }) {
 
 import { DashboardUI } from "../components/DashboardUI";
 // Adăugăm useNavigate de la Remix
-import { useNavigate } from "@remix-run/react"; 
+import { useNavigate } from "@remix-run/react";
 
 export default function Index() {
   const { rules } = useLoaderData<typeof loader>();
@@ -89,16 +109,16 @@ export default function Index() {
       <TitleBar title="GiftBot Dashboard">
         {/* Folosim navigate() în loc de window.open pentru a păstra totul ca un SPA (Single Page App) */}
         <button variant="primary" onClick={() => navigate("/app/bots/new")}>
-            Create Rule
+          Create Rule
         </button>
       </TitleBar>
-      
+
       {/* Transmitem rutele corecte către interfața Dashboard-ului */}
-      <DashboardUI 
-        rules={rules} 
+      <DashboardUI
+        rules={rules}
         routes={{
-            newRule: "/app/bots/new",
-            editRule: (id: string) => `/app/bots/${id}`
+          newRule: "/app/bots/new",
+          editRule: (id: string) => `/app/bots/${id}`
         }}
       />
     </Page>

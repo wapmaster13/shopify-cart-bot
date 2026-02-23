@@ -35,9 +35,10 @@ interface GiftRule {
     minCartValue?: number;
     minQuantity?: number;
     triggerProductIds?: string;
-    giftVariantId: string;
+    giftVariantId?: string | null;
     giftVariantIds?: string;
     isActive: boolean;
+    status?: string;
     createdAt: string;
 }
 
@@ -268,12 +269,12 @@ const BotCard = ({ rule, onDelete, onEdit }: { rule: GiftRule, onDelete: (id: st
                 {/* Status Pill */}
                 <div style={{
                     padding: "6px 12px", borderRadius: 20,
-                    background: rule.isActive ? "rgba(34, 197, 94, 0.1)" : "rgba(241, 245, 249, 1)",
-                    color: rule.isActive ? "#15803d" : "#64748b",
+                    background: rule.status === "EXPIRED" ? "rgba(239, 68, 68, 0.1)" : rule.isActive ? "rgba(34, 197, 94, 0.1)" : "rgba(241, 245, 249, 1)",
+                    color: rule.status === "EXPIRED" ? "#b91c1c" : rule.isActive ? "#15803d" : "#64748b",
                     fontSize: "0.85rem", fontWeight: 600, display: "flex", alignItems: "center", gap: 6
                 }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-                    {rule.isActive ? "Active" : "Inactive"}
+                    {rule.status === "EXPIRED" ? "Expired" : rule.isActive ? "Active" : "Inactive"}
                 </div>
 
                 {/* Actions */}

@@ -5,6 +5,10 @@ import shopify from "../shopify.server";
 export async function loader({ request, params }: LoaderFunctionArgs) {
     const shop = params["*"];
 
+    // Determine the absolute server origin to tell the storefront JS where to ping back
+    const url = new URL(request.url);
+    const serverUrl = `${url.protocol}//${url.host}`;
+
     if (!shop) {
         return new Response("console.error('CartBot: Shop domain missing');", {
             headers: { "Content-Type": "application/javascript" },
@@ -133,6 +137,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             notificationText: rule.notificationText,
             notificationBgColor: rule.notificationBgColor,
             notificationTextColor: rule.notificationTextColor,
+            // Scheduling
+            startDate: rule.startDate ? new Date(rule.startDate).getTime() : null,
+            endDate: rule.endDate ? new Date(rule.endDate).getTime() : null,
         };
     });
 
@@ -140,9 +147,39 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const jsContent = `
     (function() {
       if (window.CartBotRules) return;
-      window.CartBotShop = "${shop}";
-      window.CartBotRules = ${JSON.stringify(clientRules)};
-      console.log("CartBot: Rules Loaded 🚀 (Rich Data)", window.CartBotRules);
+      
+      const shop = "${shop}";
+      const serverUrl = "${serverUrl}";
+      const rawRules = ${JSON.stringify(clientRules)};
+      const validRules = [];
+      const now = Date.now();
+
+      rawRules.forEach(rule => {
+          if (rule.endDate && now > rule.endDate) {
+              // Lazy-Cleanup: Immediately tell backend to kill expired bot
+              if (!window.CartBotExpireSent) {
+                  window.CartBotExpireSent = true;
+                  fetch(serverUrl + '/api/cartbot/expire', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ shop: shop, ruleId: rule.id })
+                  }).then(res => res.json()).then(data => {
+                      if (data.expired) {
+                          console.log("CartBot: Stale bot wiped from network.");
+                          // Optional: force a cart refresh if we suspect the cart has stale discounts
+                          if (window.CartBotRefreshUI) window.CartBotRefreshUI();
+                      }
+                  }).catch(console.error);
+              }
+          } else {
+              validRules.push(rule);
+          }
+      });
+
+      window.CartBotShop = shop;
+      window.CartBotServerUrl = serverUrl;
+      window.CartBotRules = validRules;
+      console.log("CartBot: Rules Loaded 🚀", window.CartBotRules);
     })();
   `;
 

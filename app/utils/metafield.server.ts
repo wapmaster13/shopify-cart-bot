@@ -34,6 +34,8 @@ export async function syncGiftRules(admin: any, shop: string) {
             notificationText: r.notificationText || "Free gift added to your order!",
             notificationBgColor: r.notificationBgColor || "#1a1a1a",
             notificationTextColor: r.notificationTextColor || "#ffffff",
+            startDate: r.startDate ? new Date(r.startDate).getTime() : null,
+            endDate: r.endDate ? new Date(r.endDate).getTime() : null,
             isActive: true
         }));
 
