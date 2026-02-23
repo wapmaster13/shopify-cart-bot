@@ -378,7 +378,19 @@ export function loader() {
                       
                       // Check for Existing Gift
                       const alreadyHasGift = cart.items.some(item => (item.variant_id === potentialGiftId || item.id === potentialGiftId) && item.properties && item.properties['_FreeGift']);
-                      if (!alreadyHasGift && !giftVariantIdsToAdd.includes(potentialGiftId)) {
+                      
+                      const manuallyAdded = cart.items.some(item => (item.variant_id === potentialGiftId || item.id === potentialGiftId) && (!item.properties || !item.properties['_FreeGift']));
+
+                      if (alreadyHasGift) {
+                          continue;
+                      }
+
+                      if (manuallyAdded && !rule.applyIfAlreadyInCart) {
+                          console.log('CartBot: Skipping gift injection of ' + potentialGiftId + ' because user already added it manually and applyIfAlreadyInCart is disabled.');
+                          continue;
+                      }
+
+                      if (!giftVariantIdsToAdd.includes(potentialGiftId)) {
                           giftVariantIdsToAdd.push(potentialGiftId);
                       }
                   }
@@ -389,19 +401,34 @@ export function loader() {
           // 5. Execute Secondary Request
           if (giftVariantIdsToAdd.length > 0) {
               console.log("CartBot: Intercepted theme add! Sending secondary request for gifts...", giftVariantIdsToAdd);
-              const itemsToInject = giftVariantIdsToAdd.map(id => ({
-                  id: id,
-                  quantity: 1,
-                  properties: { '_FreeGift': 'true' }
-              }));
+              let anySuccess = false;
               
-              const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                  body: JSON.stringify({ items: itemsToInject })
-              });
-              if (res.ok) {
-                  console.log("CartBot: Successfully added gifts!");
+              for (const potentialGiftId of giftVariantIdsToAdd) {
+                  try {
+                      const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                          body: JSON.stringify({ 
+                              items: [{
+                                  id: potentialGiftId,
+                                  quantity: 1,
+                                  properties: { '_FreeGift': 'true' }
+                              }] 
+                          })
+                      });
+                      
+                      if (res.ok) {
+                          anySuccess = true;
+                          console.log('CartBot: Successfully added gift: ' + potentialGiftId);
+                      } else {
+                          console.warn('CartBot: Failed to add gift ' + potentialGiftId + '. It might be out of stock or rejected by Shopify.', await res.text());
+                      }
+                  } catch (err) {
+                      console.error('CartBot: Network error adding gift ' + potentialGiftId, err);
+                  }
+              }
+
+              if (anySuccess) {
                   setTimeout(() => triggerSync(), 20);
               }
           }
