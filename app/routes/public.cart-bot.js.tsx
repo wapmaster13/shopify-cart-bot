@@ -17,7 +17,7 @@ export function loader() {
   console.log("CartBot: Brain Loaded 🧠 v7.0 (Universal)");
 
   const CONFIG = {
-    debounceTime: 800, // Sync delay (wait for WASM)
+    debounceTime: 150, // Sync delay (wait for WASM) down from 800
     bucketDelay: 500,  // Token bucket refill delay
     bucketSize: 10,
     sections: ['cart-drawer', 'cart-icon-bubble', 'main-cart-items', 'cart-notification-button'] 
@@ -376,13 +376,13 @@ export function loader() {
               });
               if (res.ok) {
                   console.log("CartBot: Successfully added gifts!");
-                  setTimeout(() => triggerSync(), 100);
+                  setTimeout(() => triggerSync(), 20);
               }
           }
       } catch (e) {
           console.error("CartBot: Failed to process async gift injection", e);
       } finally {
-          setTimeout(() => { window._cartBotAddingGift = false; }, 1000); 
+          setTimeout(() => { window._cartBotAddingGift = false; }, 400); 
       }
   }
 
@@ -470,7 +470,7 @@ export function loader() {
                       });
                       if (res.ok) {
                           console.log("CartBot: Successfully removed unqualified gift.");
-                          setTimeout(() => triggerSync(true), 150);
+                          setTimeout(() => triggerSync(true), 20);
                       }
                   }
               }
@@ -478,7 +478,7 @@ export function loader() {
       } catch (e) {
           console.error("CartBot: Failed to validate cart state", e);
       } finally {
-          setTimeout(() => { window._cartBotValidating = false; }, 1000); 
+          setTimeout(() => { window._cartBotValidating = false; }, 400); 
       }
   }
 
@@ -532,9 +532,12 @@ export function loader() {
       if (url && (url.includes('/cart/update') || url.includes('/cart/change') || url.includes('/cart/clear'))) {
           fetchPromise.then(async (response) => {
               if (response.ok) {
-                  setTimeout(() => triggerSync(), 100);
+                  setTimeout(() => triggerSync(), 20);
                   if (!window._cartBotAddingGift && !window._cartBotValidating) {
-                      setTimeout(() => validateCartStateAsync(), 300);
+                      setTimeout(async () => {
+                          await validateCartStateAsync();
+                          await injectGiftAsync([]);
+                      }, 50);
                   }
               }
           });
@@ -558,9 +561,12 @@ export function loader() {
               if (this.responseURL.includes('/cart/add') && !window._cartBotAddingGift) {
                   injectGiftAsync(addedIds);
               } else if (this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear')) {
-                  setTimeout(() => triggerSync(), 100);
+                  setTimeout(() => triggerSync(), 20);
                   if (!window._cartBotAddingGift && !window._cartBotValidating) {
-                      setTimeout(() => validateCartStateAsync(), 300);
+                      setTimeout(async () => {
+                          await validateCartStateAsync();
+                          await injectGiftAsync([]);
+                      }, 50);
                   }
               }
           }
