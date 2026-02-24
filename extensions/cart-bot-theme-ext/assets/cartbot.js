@@ -46,8 +46,9 @@
     }
 
     // --- Helper: Universal Refresh Strategy ("Kitchen Sink") ---
-    async function refreshCartUI(data) {
-        const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
+    async function refreshCartUI(data, forceOpen = false) {
+        console.log("🔴 CartBot: refreshCartUI called | forceOpen:", forceOpen);
+        const debug = new URLSearchParams(window.location.search).has('cartbot_debug') || true;
         if (debug) console.log("CartBot: 🚿 Executing Kitchen Sink Refresh...");
 
         try {
@@ -80,7 +81,7 @@
             // 3. Third-Party Apps
             if (window.liquidAjaxCart?.update) { window.liquidAjaxCart.update(); }
             if (window.liquidAjaxCart?.cartRequestUpdate) { window.liquidAjaxCart.cartRequestUpdate(); }
-            if (window.SLIDECART_OPEN) { setTimeout(() => window.SLIDECART_OPEN(), 500); }
+            if (forceOpen && window.SLIDECART_OPEN) { setTimeout(() => window.SLIDECART_OPEN(), 500); }
             if (window.Rebuy?.Cart?.fetchShopifyCart) { window.Rebuy.Cart.fetchShopifyCart(); }
             if (window.HsCartDrawer?.updateSlideCart) { window.HsCartDrawer.updateSlideCart(); }
 
@@ -105,8 +106,8 @@
             ];
 
             eventNames.forEach(evt => {
-                document.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: true, cart: data } }));
-                document.documentElement.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: true, cart: data } }));
+                document.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: forceOpen, cart: data } }));
+                document.documentElement.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: forceOpen, cart: data } }));
             });
 
             if (window.pubsub) {
@@ -164,24 +165,96 @@
 
 
     // --- 2. Notification System ---
-    function showGiftToaster() {
+    function showGiftToaster(rule) {
+        if (rule && rule.notificationEnabled === false) return;
+
+        const bgColor = rule?.notificationBgColor || '#1a1a1a';
+        const textColor = rule?.notificationTextColor || '#ffffff';
+        const text = rule?.notificationText || 'Free gift added to your order!';
+        const icon = rule?.consentIcon || '🎁';
+
         let toaster = document.getElementById('cart-bot-toaster');
         if (!toaster) {
             toaster = document.createElement('div');
             toaster.id = 'cart-bot-toaster';
             Object.assign(toaster.style, {
-                position: 'fixed', bottom: '20px', right: '20px', zIndex: '2147483647', // Max Z-Index
-                backgroundColor: '#1a1a1a', color: '#fff', padding: '12px 24px',
+                position: 'fixed', bottom: '20px', right: '20px', zIndex: '2147483647',
+                backgroundColor: bgColor, color: textColor, padding: '12px 24px',
                 borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                 transform: 'translateY(150%)', transition: 'transform 0.4s ease-out',
                 fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
                 fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px'
             });
-            toaster.innerHTML = '<span>🎁</span> <span>Free gift added to your order!</span>';
+            toaster.innerHTML = `<span>${icon}</span> <span>${text}</span>`;
             document.body.appendChild(toaster);
+        } else {
+            toaster.style.backgroundColor = bgColor;
+            toaster.style.color = textColor;
+            toaster.innerHTML = `<span>${icon}</span> <span>${text}</span>`;
         }
         requestAnimationFrame(() => toaster.style.transform = 'translateY(0)');
         setTimeout(() => { toaster.style.transform = 'translateY(150%)'; }, 4000);
+    }
+
+    // --- 2.2 Consent System ---
+    function showConsentPopup(rule, giftText, onAccept, onDecline) {
+        console.log("CartBot: 🛡️ showConsentPopup called.");
+
+        let overlay = document.getElementById('cart-bot-consent-overlay');
+        if (overlay) return; // Already showing
+
+        overlay = document.createElement('div');
+        overlay.id = 'cart-bot-consent-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
+            backgroundColor: 'rgba(0,0,0,0.5)', zIndex: '2147483646',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)'
+        });
+
+        const modal = document.createElement('div');
+
+        const title = rule?.consentTitle || "You unlocked a Free Gift!";
+        const content = rule?.consentContent || giftText || "Would you like to add a free promotional item to your cart?";
+        const acceptText = rule?.consentAcceptText || "Yes, add gift";
+        const declineText = rule?.consentDeclineText || "No, thanks";
+        const bgColor = rule?.consentBgColor || "#ffffff";
+        const textColor = rule?.consentTextColor || "#1a1a1a";
+        const acceptBgColor = rule?.consentAcceptBgColor || "#000000";
+        const acceptTextColor = rule?.consentAcceptTextColor || "#ffffff";
+        const declineBgColor = rule?.consentDeclineBgColor || "transparent";
+        const declineTextColor = rule?.consentDeclineTextColor || "#000000";
+        const titleColor = rule?.consentTitleColor || textColor;
+        const consentIcon = rule?.consentIcon || "🎁";
+
+        Object.assign(modal.style, {
+            backgroundColor: bgColor, padding: '24px', borderRadius: '12px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)', maxWidth: '400px', width: '90%',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+            textAlign: 'center', color: textColor
+        });
+
+        modal.innerHTML = `
+            <div style="font-size: 40px; margin-bottom: 12px;">${consentIcon}</div>
+            <h3 style="margin: 0 0 12px; font-size: 18px; font-weight: 600; color: ${titleColor};">${title}</h3>
+            <p style="margin: 0 0 24px; font-size: 14px; opacity: 0.9;">${content}</p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button id="cartbot-btn-decline" style="padding: 10px 20px; border: ${declineBgColor === 'transparent' ? `1px solid ${textColor}40` : 'none'}; background: ${declineBgColor}; color: ${declineTextColor}; border-radius: 6px; cursor: pointer; font-weight: 500; transition: all 0.2s;">${declineText}</button>
+                <button id="cartbot-btn-accept" style="padding: 10px 20px; border: none; background: ${acceptBgColor}; color: ${acceptTextColor}; border-radius: 6px; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">${acceptText}</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        document.getElementById('cartbot-btn-decline').addEventListener('click', () => {
+            overlay.remove();
+            if (onDecline) onDecline();
+        });
+
+        document.getElementById('cartbot-btn-accept').addEventListener('click', () => {
+            overlay.remove();
+            if (onAccept) onAccept();
+        });
     }
 
     // --- 2.5 Logic: Manage Gifts (Client Side) ---
@@ -197,6 +270,8 @@
         const cartTotal = cart.total_price / 100;
 
         const targetGifts = new Set();
+        let requiresConsent = false;
+        let consentRule = null;
 
         for (const rule of rules) {
             let eligible = false;
@@ -216,8 +291,15 @@
             else if (rule.triggerType === 'COMBINED') eligible = cartValuePassed && productPassed;
 
             if (eligible) {
-                const giftId = rule.giftVariantIds?.[0]; // First gift
-                if (giftId) targetGifts.add(extractId(giftId));
+                const rawGifts = rule.giftVariantIds || (rule.giftVariants ? rule.giftVariants.map(v => v.id) : []);
+                for (const rawG of rawGifts) {
+                    if (!rawG) continue;
+                    targetGifts.add(extractId(rawG));
+                }
+                if (rule.requireConsent) {
+                    requiresConsent = true;
+                    if (!consentRule) consentRule = rule;
+                }
             }
         }
 
@@ -255,27 +337,46 @@
         }
 
         if (itemsToAdd.length > 0) {
-            if (debug) console.log("CartBot: Adding Missing Gifts", itemsToAdd);
-            try {
-                const addItems = itemsToAdd.map(id => ({
-                    id: id,
-                    quantity: 1,
-                    properties: { '_FreeGift': 'true' }
-                }));
-                await fetch(window.Shopify.routes.root + 'cart/add.js', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items: addItems })
+            console.log("CartBot: Items to Add evaluated:", itemsToAdd, "Requires Consent:", requiresConsent);
+
+            if (requiresConsent) {
+                console.log("CartBot: Consent is required. Attempting to show popup.");
+                showConsentPopup(consentRule, "Would you like to add an eligible free gift to your order?", async () => {
+                    try {
+                        const addItems = itemsToAdd.map(id => ({ id: id, quantity: 1, properties: { '_FreeGift': 'true' } }));
+                        await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ items: addItems })
+                        });
+                        triggerSync(true); // Manually trigger since we handle result here
+                    } catch (e) { console.error("CartBot: Add Gift Error", e); }
+                }, () => {
+                    console.log("CartBot: User declined consent from manageGifts popup.");
                 });
-                changesMade = true;
-            } catch (e) { console.error("CartBot: Add Gift Error", e); }
+            } else {
+                if (debug) console.log(`CartBot: Consent not required. Adding Missing Gifts`, itemsToAdd);
+                try {
+                    const addItems = itemsToAdd.map(id => ({
+                        id: id,
+                        quantity: 1,
+                        properties: { '_FreeGift': 'true' }
+                    }));
+                    await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items: addItems })
+                    });
+                    changesMade = true;
+                } catch (e) { console.error("CartBot: Add Gift Error", e); }
+            }
         }
 
         return changesMade;
     }
 
     // --- 3. Main Sync Logic ---
-    async function syncCartUI(force = false) {
+    async function syncCartUI(force = false, forceOpen = false) {
+        console.log("🔴 CartBot: syncCartUI called | force:", force, "| forceOpen:", forceOpen);
         if (STATE.isSyncing && !force) return;
         if (!consumeToken() && !force) return;
 
@@ -299,16 +400,22 @@
             if (giftsChanged) {
                 if (debug) console.log("CartBot: Gifts updated, recursing sync...");
                 STATE.isSyncing = false; // Reset lock
-                return syncCartUI(true); // Force recurse to update UI with new items
+                return syncCartUI(true, forceOpen); // Force recurse to update UI with new items
             }
 
             // 3. Update UI (Kitchen Sink)
-            await refreshCartUI(uiRes);
+            // Only force a UI update if we actively modified gifts (force === true) 
+            // or if an interceptor explicitly requested it (forceOpen === true).
+            // This prevents the cart drawer from popping open on every page load.
+            if (force || forceOpen) {
+                await refreshCartUI(uiRes, forceOpen);
+            }
 
             // --- GIFT DETECTION (Toast) ---
             const hasGift = cartRes.items.some(item => item.final_price === 0 || (item.properties && item.properties['_FreeGift']));
             if (hasGift && !window.CartBotGiftShown) {
-                showGiftToaster();
+                const rule = window.CartBotRules && window.CartBotRules.length > 0 ? window.CartBotRules[0] : null;
+                showGiftToaster(rule);
                 window.CartBotGiftShown = true;
             }
 
@@ -319,9 +426,10 @@
         }
     }
 
-    function triggerSync() {
+    function triggerSync(forceOpen = false) {
+        console.log("🔴 CartBot: triggerSync called | forceOpen:", forceOpen);
         if (STATE.timeout) clearTimeout(STATE.timeout);
-        STATE.timeout = setTimeout(syncCartUI, CONFIG.debounceTime);
+        STATE.timeout = setTimeout(() => syncCartUI(false, forceOpen), CONFIG.debounceTime);
     }
 
     // --- 5. Aggressive Interceptors (Monkey-Patching) ---
@@ -345,16 +453,32 @@
             const cart = await cartRes.json();
             const cartTotal = cart.total_price / 100;
 
+            const targetGifts = new Set();
+            const allowedGifts = new Set();
+            let requiresConsent = false;
             let giftVariantIdsToAdd = [];
+            let consentRule = null;
+
+            console.log("CartBot: injectGiftAsync evaluating rules...", rules);
 
             // 2. Evaluate Rules Dynamically
             for (const rule of rules) {
-                let isMatch = false;
+                let eligible = false;
 
                 // Matching Logic
-                if (rule.triggerType === 'CART_VALUE') {
-                    isMatch = cartTotal >= parseFloat(rule.minCartValue || 0);
-                }
+                // Check Cart Value
+                const cartValuePassed = cartTotal >= parseFloat(rule.minCartValue || 0);
+
+                // Check Product Purchase
+                const triggerIds = rule.triggerProductIds || [];
+                const productPassed = triggerIds.some(tid => {
+                    const numId = extractId(tid);
+                    return cart.items.some(i => i.product_id === numId || i.variant_id === numId || i.id === numId);
+                });
+
+                if (rule.triggerType === 'CART_VALUE') eligible = cartValuePassed;
+                else if (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'PRODUCTS') eligible = productPassed;
+                else if (rule.triggerType === 'COMBINED') eligible = cartValuePassed && productPassed;
                 else if (rule.triggerType === 'QUANTITY') {
                     if (rule.countGlobalQuantity) {
                         let totalQualifyingQty = 0;
@@ -364,9 +488,9 @@
                                 totalQualifyingQty += item.quantity;
                             }
                         });
-                        isMatch = totalQualifyingQty >= (rule.minQuantity || 0) && totalQualifyingQty <= (rule.maxQuantity || 999999);
+                        eligible = totalQualifyingQty >= (rule.minQuantity || 0) && totalQualifyingQty <= (rule.maxQuantity || 999999);
                     } else {
-                        isMatch = cart.items.some(item => {
+                        eligible = cart.items.some(item => {
                             const isGift = item.properties && item.properties['_FreeGift'];
                             if (!isGift) {
                                 return item.quantity >= (rule.minQuantity || 0) && item.quantity <= (rule.maxQuantity || 999999);
@@ -374,27 +498,11 @@
                             return false;
                         });
                     }
-                }
-                else if (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED') {
-                    const triggerIds = (rule.triggerProductIds || []).map(extractId);
-
-                    // Match against newly added IDs OR existing cart items
-                    const addedMatch = triggerIds.some(tid => (addedIds || []).includes(tid));
-                    const cartMatch = triggerIds.some(tid => cart.items.some(i => i.product_id === tid || i.variant_id === tid || i.id === tid));
-
-                    const hasProduct = addedMatch || cartMatch;
-
-                    if (rule.triggerType === 'COMBINED') {
-                        isMatch = hasProduct && (cartTotal >= parseFloat(rule.minCartValue || 0));
-                    } else {
-                        isMatch = hasProduct;
-                    }
                 } else {
-                    // Fallback for generic generic rules
-                    isMatch = true;
+                    eligible = true;
                 }
 
-                if (isMatch) {
+                if (eligible) {
                     const rawGifts = rule.giftVariantIds || (rule.giftVariants ? rule.giftVariants.map(v => v.id) : []);
                     for (const rawG of rawGifts) {
                         if (!rawG) continue;
@@ -419,6 +527,11 @@
                             giftVariantIdsToAdd.push(potentialGiftId);
                         }
                     }
+
+                    if (rule.requireConsent) {
+                        requiresConsent = true;
+                        if (!consentRule) consentRule = rule;
+                    }
                     break;
                 }
             }
@@ -426,35 +539,53 @@
             // 5. Execute Secondary Request
             if (giftVariantIdsToAdd.length > 0) {
                 console.log("CartBot: Intercepted theme add! Sending secondary request for gifts...", giftVariantIdsToAdd);
+
                 let anySuccess = false;
 
-                for (const potentialGiftId of giftVariantIdsToAdd) {
-                    try {
-                        const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                            body: JSON.stringify({
-                                items: [{
-                                    id: potentialGiftId,
-                                    quantity: 1,
-                                    properties: { '_FreeGift': 'true' }
-                                }]
-                            })
-                        });
-
-                        if (res.ok) {
-                            anySuccess = true;
-                            console.log(`CartBot: Successfully added gift: ${potentialGiftId}`);
-                        } else {
-                            console.warn(`CartBot: Failed to add gift ${potentialGiftId}. It might be out of stock or rejected by Shopify.`, await res.text());
+                if (requiresConsent) {
+                    console.log("CartBot: Consent is required. Trying to pop up.");
+                    showConsentPopup(consentRule, "Would you like to add an eligible free gift to your order?", async () => {
+                        for (const potentialGiftId of giftVariantIdsToAdd) {
+                            try {
+                                const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                                    body: JSON.stringify({ items: [{ id: potentialGiftId, quantity: 1, properties: { '_FreeGift': 'true' } }] })
+                                });
+                                if (res.ok) anySuccess = true;
+                            } catch (err) { }
                         }
-                    } catch (err) {
-                        console.error(`CartBot: Network error adding gift ${potentialGiftId}`, err);
-                    }
-                }
+                        if (anySuccess) setTimeout(() => triggerSync(true), 100);
+                    });
+                } else {
+                    console.log(`CartBot: Adding gifts silently because Consent is not required.`);
+                    for (const potentialGiftId of giftVariantIdsToAdd) {
+                        try {
+                            const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                                body: JSON.stringify({
+                                    items: [{
+                                        id: potentialGiftId,
+                                        quantity: 1,
+                                        properties: { '_FreeGift': 'true' }
+                                    }]
+                                })
+                            });
 
-                if (anySuccess) {
-                    setTimeout(() => triggerSync(), 100);
+                            if (res.ok) {
+                                anySuccess = true;
+                                console.log(`CartBot: Successfully added gift: ${potentialGiftId}`);
+                            } else {
+                                console.warn(`CartBot: Failed to add gift ${potentialGiftId}. It might be out of stock or rejected by Shopify.`, await res.text());
+                            }
+                        } catch (err) {
+                            console.error(`CartBot: Network error adding gift ${potentialGiftId}`, err);
+                        }
+                    }
+
+                    if (anySuccess) {
+                        setTimeout(() => triggerSync(true), 100);
+                    }
                 }
             }
         } catch (e) {
@@ -621,7 +752,7 @@
         if (url && (url.includes('/cart/update') || url.includes('/cart/change') || url.includes('/cart/clear'))) {
             fetchPromise.then(async (response) => {
                 if (response.ok) {
-                    setTimeout(() => triggerSync(), 100);
+                    setTimeout(() => triggerSync(false), 100);
                     if (!window._cartBotAddingGift && !window._cartBotValidating) {
                         setTimeout(() => validateCartStateAsync(), 300);
                     }
@@ -647,7 +778,7 @@
                 if (this.responseURL.includes('/cart/add') && !window._cartBotAddingGift) {
                     injectGiftAsync(addedIds);
                 } else if (this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear')) {
-                    setTimeout(() => triggerSync(), 100);
+                    setTimeout(() => triggerSync(false), 100);
                     if (!window._cartBotAddingGift && !window._cartBotValidating) {
                         setTimeout(() => validateCartStateAsync(), 300);
                     }

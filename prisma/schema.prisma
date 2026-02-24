@@ -56,6 +56,18 @@ model GiftRule {
   notificationText      String?
   notificationBgColor   String?   @default("#1a1a1a")
   notificationTextColor String?   @default("#ffffff")
+  consentTitle          String?
+  consentContent        String?
+  consentAcceptText     String?
+  consentDeclineText    String?
+  consentBgColor        String?
+  consentTextColor      String?
+  consentAcceptBgColor  String?
+  consentAcceptTextColor String?
+  consentDeclineBgColor String?
+  consentDeclineTextColor String?
+  consentTitleColor       String?
+  consentIcon             String?  @default("🎁")
   isActive              Boolean   @default(true)
   createdAt             DateTime  @default(now())
 }

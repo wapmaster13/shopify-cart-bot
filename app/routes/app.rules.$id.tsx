@@ -52,8 +52,8 @@ export async function action({ request, params }: { request: Request, params: an
         const shopId = shopData.data.shop.id;
 
         const metafieldValue = JSON.stringify({
-            triggerAmount: updatedRule.triggerAmount,
-            giftVariantId: updatedRule.giftVariantId,
+            triggerAmount: updatedRule.minCartValue,
+            giftVariantId: updatedRule.giftVariantIds ? JSON.parse(updatedRule.giftVariantIds)[0] : null,
             isActive: true
         });
 
@@ -99,8 +99,8 @@ export default function EditRule() {
     const submit = useSubmit();
     const shopify = useAppBridge();
 
-    const [triggerAmount, setTriggerAmount] = useState(rule.triggerAmount.toString());
-    const [giftVariantId, setGiftVariantId] = useState(rule.giftVariantId);
+    const [triggerAmount, setTriggerAmount] = useState(rule.minCartValue.toString());
+    const [giftVariantId, setGiftVariantId] = useState(rule.giftVariantIds ? JSON.parse(rule.giftVariantIds)[0] : "");
     const [giftTitle, setGiftTitle] = useState(""); // Title retrieval is complex without extra query, leaving blank or initial
 
     const isLoading = nav.state === "submitting";

@@ -106,7 +106,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
 
     // Map to a rich format for the frontend
-    const clientRules = activeRules.map((rule) => {
+    const clientRules = activeRules.map((rule: any) => {
         const triggerIds = rule.triggerProductIds ? JSON.parse(rule.triggerProductIds) : [];
         const giftIds = rule.giftVariantIds ? JSON.parse(rule.giftVariantIds) : [];
 
@@ -135,6 +135,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             triggerProductIds: triggerIds,
             giftVariantIds: giftIds,
             applyIfAlreadyInCart: rule.applyIfAlreadyInCart,
+            // Logic Flags
+            requireConsent: rule.requireConsent,
+            oncePerSession: rule.oncePerSession,
+            reverseLogic: rule.reverseLogic,
+            ajaxOnly: rule.ajaxOnly,
+            applyForEachCondition: rule.applyForEachCondition,
+            // Custom Consent Settings
+            consentTitle: rule.consentTitle,
+            consentContent: rule.consentContent,
+            consentAcceptText: rule.consentAcceptText,
+            consentDeclineText: rule.consentDeclineText,
+            consentBgColor: rule.consentBgColor,
+            consentTextColor: rule.consentTextColor,
+            consentAcceptBgColor: rule.consentAcceptBgColor,
+            consentAcceptTextColor: rule.consentAcceptTextColor,
+            consentDeclineBgColor: rule.consentDeclineBgColor,
+            consentDeclineTextColor: rule.consentDeclineTextColor,
+            consentTitleColor: rule.consentTitleColor,
+            consentIcon: rule.consentIcon,
             // Notifications
             notificationEnabled: rule.notificationEnabled,
             notificationText: rule.notificationText,

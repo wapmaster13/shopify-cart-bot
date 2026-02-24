@@ -56,6 +56,20 @@ export async function action({ request }: { request: Request }) {
     const ajaxOnly = formData.get("ajaxOnly") === "on";
     const applyForEachCondition = formData.get("applyForEachCondition") === "on";
 
+    // Custom Consent Data
+    const consentTitle = formData.get("consentTitle") as string || "We have a gift for you!";
+    const consentContent = formData.get("consentContent") as string || "You've unlocked a free gift. Would you like to add it to your order?";
+    const consentAcceptText = formData.get("consentAcceptText") as string || "Yes, add gift";
+    const consentDeclineText = formData.get("consentDeclineText") as string || "No thanks";
+    const consentBgColor = formData.get("consentBgColor") as string || "#ffffff";
+    const consentTextColor = formData.get("consentTextColor") as string || "#000000";
+    const consentAcceptBgColor = formData.get("consentAcceptBgColor") as string || "#000000";
+    const consentAcceptTextColor = formData.get("consentAcceptTextColor") as string || "#ffffff";
+    const consentDeclineBgColor = formData.get("consentDeclineBgColor") as string || "transparent";
+    const consentDeclineTextColor = formData.get("consentDeclineTextColor") as string || "#000000";
+    const consentTitleColor = formData.get("consentTitleColor") as string || "#1a1a1a";
+    const consentIcon = formData.get("consentIcon") as string || "🎁";
+
     // Notifications
     const notificationEnabled = formData.get("notificationEnabled") === "on";
     const notificationText = formData.get("notificationText") as string || "Free gift added to your order!";
@@ -111,6 +125,18 @@ export async function action({ request }: { request: Request }) {
                 reverseLogic,
                 ajaxOnly,
                 applyForEachCondition,
+                consentTitle,
+                consentContent,
+                consentAcceptText,
+                consentDeclineText,
+                consentBgColor,
+                consentTextColor,
+                consentAcceptBgColor,
+                consentAcceptTextColor,
+                consentDeclineBgColor,
+                consentDeclineTextColor,
+                consentTitleColor,
+                consentIcon,
                 notificationEnabled,
                 notificationText,
                 notificationBgColor,
@@ -250,6 +276,18 @@ export default function BotArchitect() {
 
     // 4. Compliance
     const [requireConsent, setRequireConsent] = useState(false);
+    const [consentTitle, setConsentTitle] = useState("Special Offer! 🎉");
+    const [consentContent, setConsentContent] = useState("We have a gift for you. Add to order?");
+    const [consentAcceptText, setConsentAcceptText] = useState("Yes, please");
+    const [consentDeclineText, setConsentDeclineText] = useState("No thanks");
+    const [consentBgColor, setConsentBgColor] = useState("#ffffff");
+    const [consentTextColor, setConsentTextColor] = useState("#000000");
+    const [consentAcceptBgColor, setConsentAcceptBgColor] = useState("#000000");
+    const [consentAcceptTextColor, setConsentAcceptTextColor] = useState("#ffffff");
+    const [consentDeclineBgColor, setConsentDeclineBgColor] = useState("transparent");
+    const [consentDeclineTextColor, setConsentDeclineTextColor] = useState("#000000");
+    const [consentTitleColor, setConsentTitleColor] = useState("#1a1a1a");
+    const [consentIcon, setConsentIcon] = useState("🎁");
 
     // 6. Notifications
     const [notificationEnabled, setNotificationEnabled] = useState(true);
@@ -274,7 +312,8 @@ export default function BotArchitect() {
             const variants = items.flatMap((p: any) => p.variants.map((v: any) => ({
                 id: v.id,
                 title: v.title === 'Default Title' ? p.title : `${p.title} - ${v.title}`,
-                image: p.images?.[0]?.originalSrc
+                image: p.images?.[0]?.originalSrc,
+                price: parseFloat(v.price || 0)
             })));
 
             if (type === 'trigger') {
@@ -288,6 +327,13 @@ export default function BotArchitect() {
     };
 
     const handleSave = () => {
+        // Enforce Content Check for Paid Gifts
+        const hasPaidGift = giftProducts.some(p => p.price > 0);
+        if (hasPaidGift && !requireConsent) {
+            shopify.toast.show("Please enable 'Show popup before adding items'. Mandatory for paid gifts.");
+            return;
+        }
+
         const fd = new FormData();
         fd.append("name", name);
         fd.append("status", status);
@@ -309,7 +355,21 @@ export default function BotArchitect() {
         fd.append("giftVariantIds", JSON.stringify(giftProductIds));
         if (applyIfAlreadyInCart) fd.append("applyIfAlreadyInCart", "on");
 
-        if (requireConsent) fd.append("requireConsent", "on");
+        if (requireConsent) {
+            fd.append("requireConsent", "on");
+            fd.append("consentTitle", consentTitle);
+            fd.append("consentContent", consentContent);
+            fd.append("consentAcceptText", consentAcceptText);
+            fd.append("consentDeclineText", consentDeclineText);
+            fd.append("consentBgColor", consentBgColor);
+            fd.append("consentTextColor", consentTextColor);
+            fd.append("consentAcceptBgColor", consentAcceptBgColor);
+            fd.append("consentAcceptTextColor", consentAcceptTextColor);
+            fd.append("consentDeclineBgColor", consentDeclineBgColor);
+            fd.append("consentDeclineTextColor", consentDeclineTextColor);
+            fd.append("consentTitleColor", consentTitleColor);
+            fd.append("consentIcon", consentIcon);
+        }
 
         if (notificationEnabled) fd.append("notificationEnabled", "on");
         fd.append("notificationText", notificationText);
@@ -487,7 +547,11 @@ export default function BotArchitect() {
                             </div>
                             {giftProducts.length > 0 && (
                                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                                    {giftProducts.map((p, i) => <Badge key={i} tone="success">{p.title}</Badge>)}
+                                    {giftProducts.map((p, i) => (
+                                        <Badge key={i} tone="success">
+                                            {`${p.title} ${p.price === undefined ? "" : (p.price === 0 ? "(FREE)" : `- $${p.price.toFixed(2)}`)}`}
+                                        </Badge>
+                                    ))}
                                 </div>
                             )}
                             <Checkbox
@@ -522,7 +586,74 @@ export default function BotArchitect() {
                                             <strong>Legal Note:</strong> As per Shopify requirements, you must obtain buyer consent before adding non-essential items that increase cart value.
                                         </div>
 
-                                        <div style={{ marginTop: "20px", position: "relative", height: "150px", background: "#e2e8f0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                        <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "100px 1fr", gap: "16px" }}>
+                                            <TextField label="Icon / Emoji" value={consentIcon} onChange={setConsentIcon} autoComplete="off" />
+                                            <TextField label="Popup Title" value={consentTitle} onChange={setConsentTitle} autoComplete="off" />
+                                        </div>
+                                        <div style={{ marginTop: "12px" }}>
+                                            <TextField label="Popup Content" value={consentContent} onChange={setConsentContent} autoComplete="off" multiline={2} />
+                                        </div>
+                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                            <TextField label="Accept Button Text" value={consentAcceptText} onChange={setConsentAcceptText} autoComplete="off" />
+                                            <TextField label="Decline Button Text" value={consentDeclineText} onChange={setConsentDeclineText} autoComplete="off" />
+                                        </div>
+                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                            <BlockStack gap="200">
+                                                <Text as="span" variant="bodyMd">Background Color</Text>
+                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                    <input type="color" value={consentBgColor.startsWith("#") ? consentBgColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                    <TextField label="" value={consentBgColor} onChange={setConsentBgColor} autoComplete="off" />
+                                                </div>
+                                            </BlockStack>
+                                            <BlockStack gap="200">
+                                                <Text as="span" variant="bodyMd">Popup Title Color</Text>
+                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                    <input type="color" value={consentTitleColor.startsWith("#") ? consentTitleColor.slice(0, 7) : "#1a1a1a"} onChange={(e) => setConsentTitleColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                    <TextField label="" value={consentTitleColor} onChange={setConsentTitleColor} autoComplete="off" />
+                                                </div>
+                                            </BlockStack>
+                                            <BlockStack gap="200">
+                                                <Text as="span" variant="bodyMd">Popup Content Color</Text>
+                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                    <input type="color" value={consentTextColor.startsWith("#") ? consentTextColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                    <TextField label="" value={consentTextColor} onChange={setConsentTextColor} autoComplete="off" />
+                                                </div>
+                                            </BlockStack>
+                                        </div>
+                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                            <BlockStack gap="200">
+                                                <Text as="span" variant="bodyMd">Accept Button BG</Text>
+                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                    <input type="color" value={consentAcceptBgColor.startsWith("#") ? consentAcceptBgColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentAcceptBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                    <TextField label="" value={consentAcceptBgColor} onChange={setConsentAcceptBgColor} autoComplete="off" />
+                                                </div>
+                                            </BlockStack>
+                                            <BlockStack gap="200">
+                                                <Text as="span" variant="bodyMd">Accept Button Text</Text>
+                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                    <input type="color" value={consentAcceptTextColor.startsWith("#") ? consentAcceptTextColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentAcceptTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                    <TextField label="" value={consentAcceptTextColor} onChange={setConsentAcceptTextColor} autoComplete="off" />
+                                                </div>
+                                            </BlockStack>
+                                        </div>
+                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                            <BlockStack gap="200">
+                                                <Text as="span" variant="bodyMd">Decline Button BG</Text>
+                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                    <input type="color" value={consentDeclineBgColor.startsWith("#") ? consentDeclineBgColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentDeclineBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                    <TextField label="" value={consentDeclineBgColor} onChange={setConsentDeclineBgColor} autoComplete="off" />
+                                                </div>
+                                            </BlockStack>
+                                            <BlockStack gap="200">
+                                                <Text as="span" variant="bodyMd">Decline Button Text</Text>
+                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                    <input type="color" value={consentDeclineTextColor.startsWith("#") ? consentDeclineTextColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentDeclineTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                    <TextField label="" value={consentDeclineTextColor} onChange={setConsentDeclineTextColor} autoComplete="off" />
+                                                </div>
+                                            </BlockStack>
+                                        </div>
+
+                                        <div style={{ marginTop: "24px", position: "relative", height: "200px", background: "#e2e8f0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                             <div style={{ position: "absolute", top: 10, left: 10, fontSize: "0.8rem", color: "#64748b" }}>Live Preview</div>
 
                                             {/* Mock Modal */}
@@ -530,16 +661,21 @@ export default function BotArchitect() {
                                                 initial={{ scale: 0.8, opacity: 0 }}
                                                 animate={{ scale: 1, opacity: 1 }}
                                                 style={{
-                                                    background: "rgba(255,255,255,0.9)", backdropFilter: "blur(10px)",
+                                                    background: consentBgColor, color: consentTextColor,
                                                     padding: "20px", borderRadius: "16px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
-                                                    width: "300px", textAlign: "center"
+                                                    width: "300px", textAlign: "center", border: "1px solid rgba(0,0,0,0.05)"
                                                 }}
                                             >
-                                                <Text as="h3" variant="headingSm">Special Offer! 🎉</Text>
-                                                <Text as="p" variant="bodySm">We have a gift for you. Add to order?</Text>
-                                                <div style={{ display: "flex", gap: "10px", marginTop: "10px", justifyContent: "center" }}>
-                                                    <div style={{ padding: "6px 12px", background: "black", color: "white", borderRadius: "6px", fontSize: "0.8rem" }}>Yes, please</div>
-                                                    <div style={{ padding: "6px 12px", border: "1px solid #ccc", borderRadius: "6px", fontSize: "0.8rem" }}>No thanks</div>
+                                                <div style={{ fontSize: "40px", marginBottom: "12px" }}>{consentIcon}</div>
+                                                <div style={{ color: consentTitleColor, marginBottom: "4px" }}>
+                                                    <Text as="h3" variant="headingSm">{consentTitle}</Text>
+                                                </div>
+                                                <div style={{ marginTop: "4px" }}>
+                                                    <Text as="p" variant="bodySm">{consentContent}</Text>
+                                                </div>
+                                                <div style={{ display: "flex", gap: "10px", marginTop: "14px", justifyContent: "center" }}>
+                                                    <div style={{ padding: "6px 12px", background: consentDeclineBgColor, color: consentDeclineTextColor, border: consentDeclineBgColor === 'transparent' ? `1px solid ${consentTextColor}40` : 'none', borderRadius: "6px", fontSize: "0.8rem" }}>{consentDeclineText}</div>
+                                                    <div style={{ padding: "6px 12px", background: consentAcceptBgColor, color: consentAcceptTextColor, borderRadius: "6px", fontSize: "0.8rem", fontWeight: "bold" }}>{consentAcceptText}</div>
                                                 </div>
                                             </motion.div>
                                         </div>
@@ -613,7 +749,7 @@ export default function BotArchitect() {
                                                     alignItems: 'center',
                                                     gap: '8px'
                                                 }}>
-                                                    <span>🎁</span> <span>{notificationText || "Free gift added to your order!"}</span>
+                                                    <span>{consentIcon}</span> <span>{notificationText || "Free gift added to your order!"}</span>
                                                 </div>
                                             </div>
                                         </div>

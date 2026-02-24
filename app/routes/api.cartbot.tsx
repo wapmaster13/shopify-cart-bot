@@ -50,8 +50,9 @@ export function loader() {
   }
 
   // --- Helper: Universal Refresh Strategy ("Kitchen Sink") ---
-  async function refreshCartUI(data) {
-    const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
+  async function refreshCartUI(data, forceOpen = false) {
+    console.log("🔴 CartBot API: refreshCartUI called | forceOpen:", forceOpen);
+    const debug = new URLSearchParams(window.location.search).has('cartbot_debug') || true;
     if (debug) console.log("CartBot: 🚿 Executing Kitchen Sink Refresh...");
 
     try {
@@ -84,7 +85,7 @@ export function loader() {
         // 3. Third-Party Apps
         if (window.liquidAjaxCart?.update) { window.liquidAjaxCart.update(); }
         if (window.liquidAjaxCart?.cartRequestUpdate) { window.liquidAjaxCart.cartRequestUpdate(); }
-        if (window.SLIDECART_OPEN) { setTimeout(() => window.SLIDECART_OPEN(), 500); }
+        if (forceOpen && window.SLIDECART_OPEN) { setTimeout(() => window.SLIDECART_OPEN(), 500); }
         if (window.Rebuy?.Cart?.fetchShopifyCart) { window.Rebuy.Cart.fetchShopifyCart(); }
         if (window.HsCartDrawer?.updateSlideCart) { window.HsCartDrawer.updateSlideCart(); }
         
@@ -109,8 +110,8 @@ export function loader() {
         ];
         
         eventNames.forEach(evt => {
-            document.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: true, cart: data } }));
-            document.documentElement.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: true, cart: data } }));
+            document.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: forceOpen, cart: data } }));
+            document.documentElement.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: forceOpen, cart: data } }));
         });
         
         if (window.pubsub) {
@@ -180,21 +181,32 @@ export function loader() {
 
 
   // --- 2. Notification System ---
-  function showGiftToaster() {
+  function showGiftToaster(rule) {
+     if (rule && rule.notificationEnabled === false) return;
+
+     const bgColor = rule?.notificationBgColor || '#1a1a1a';
+     const textColor = rule?.notificationTextColor || '#ffffff';
+     const text = rule?.notificationText || 'Free gift added to your order!';
+     const icon = rule?.consentIcon || '🎁';
+
      let toaster = document.getElementById('cart-bot-toaster');
      if (!toaster) {
          toaster = document.createElement('div');
          toaster.id = 'cart-bot-toaster';
          Object.assign(toaster.style, {
-             position: 'fixed', bottom: '20px', right: '20px', zIndex: '2147483647', // Max Z-Index
-             backgroundColor: '#1a1a1a', color: '#fff', padding: '12px 24px',
+             position: 'fixed', bottom: '20px', right: '20px', zIndex: '2147483647',
+             backgroundColor: bgColor, color: textColor, padding: '12px 24px',
              borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
              transform: 'translateY(150%)', transition: 'transform 0.4s ease-out',
              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif', 
              fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px'
          });
-         toaster.innerHTML = '<span>🎁</span> <span>Free gift added to your order!</span>';
+         toaster.innerHTML = \`<span>\${icon}</span> <span>\${text}</span>\`;
          document.body.appendChild(toaster);
+     } else {
+         toaster.style.backgroundColor = bgColor;
+         toaster.style.color = textColor;
+         toaster.innerHTML = \`<span>\${icon}</span> <span>\${text}</span>\`;
      }
      requestAnimationFrame(() => toaster.style.transform = 'translateY(0)');
      setTimeout(() => { toaster.style.transform = 'translateY(150%)'; }, 4000);
@@ -254,7 +266,8 @@ export function loader() {
   }
 
   // --- 3. Main Sync Logic ---
-  async function syncCartUI(force = false) {
+  async function syncCartUI(force = false, forceOpen = false) {
+    console.log("🔴 CartBot API: syncCartUI called | force:", force, "| forceOpen:", forceOpen);
     if (STATE.isSyncing && !force) return;
     if (!consumeToken() && !force) return;
 
@@ -278,16 +291,20 @@ export function loader() {
       if (giftsChanged) {
           if(debug) console.log("CartBot: Gifts updated, recursing sync...");
           STATE.isSyncing = false; // Reset lock
-          return syncCartUI(true); // Force recurse to update UI with new items
+          return syncCartUI(true, forceOpen); // Force recurse to update UI with new items
       }
 
       // 3. Update UI (Kitchen Sink)
-      await refreshCartUI(uiRes);
+      // Only refresh if we actively changed gifts or were asked to pop it open
+      if (force || forceOpen) {
+          await refreshCartUI(uiRes, forceOpen);
+      }
 
       // --- GIFT DETECTION (Toast) ---
       const hasGift = cartRes.items.some(item => item.final_price === 0 || (item.properties && item.properties['_FreeGift']));
       if (hasGift && !window.CartBotGiftShown) {
-           showGiftToaster();
+           const rule = window.CartBotRules && window.CartBotRules.length > 0 ? window.CartBotRules[0] : null;
+           showGiftToaster(rule);
            window.CartBotGiftShown = true;
       }
 
@@ -298,15 +315,16 @@ export function loader() {
     }
   }
 
-  function triggerSync() {
+  function triggerSync(forceOpen = false) {
+    console.log("🔴 CartBot API: triggerSync called | forceOpen:", forceOpen);
     if (STATE.timeout) clearTimeout(STATE.timeout);
-    STATE.timeout = setTimeout(syncCartUI, CONFIG.debounceTime);
+    STATE.timeout = setTimeout(() => syncCartUI(false, forceOpen), CONFIG.debounceTime);
   }
 
   // --- 4. Instant Logic: Spy & Match ---
   function checkRulesAndTrigger(addedId = null) {
       // Just trigger sync, let syncCartUI handle logic
-      triggerSync(); 
+      triggerSync(false); 
   }
 
   // --- 5. Aggressive Interceptors (Monkey-Patching) ---
@@ -318,7 +336,7 @@ export function loader() {
         fetchPromise.then(async (response) => {
             if (response.ok) {
                 // Wait slightly for Shopify to process, then sync
-                setTimeout(() => triggerSync(), 100);
+                setTimeout(() => triggerSync(url.includes('/cart/add')), 100);
             }
         });
     }
@@ -329,7 +347,7 @@ export function loader() {
   XMLHttpRequest.prototype.send = function (body) {
     this.addEventListener('load', function () {
       if (this.responseURL && (this.responseURL.includes('/cart/add') || this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change'))) {
-         setTimeout(() => triggerSync(), 100);
+         setTimeout(() => triggerSync(this.responseURL.includes('/cart/add')), 100);
       }
     });
     originalSend.call(this, body);

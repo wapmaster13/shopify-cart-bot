@@ -18,6 +18,7 @@
   var shop = "{{ shop.permanent_domain }}";
   var v = "{{ shop.metafields.cartbot.last_updated.value | default: '1' }}";
   var serverUrl = 'https://nonidiomatic-verda-direly.ngrok-free.dev'; // Stable Ngrok URL
+  var cartbotUrl = "{{ 'cartbot.js' | asset_url }}";
 
   function loadScript(url, callback) {
     var script = document.createElement("script");
@@ -31,7 +32,7 @@
 
   // Simple direct loads
   loadScript(serverUrl + '/public/rules/' + shop + '?v=' + v, function() {
-    loadScript(serverUrl + '/public/cart-bot/js?shop=' + shop + '&v=' + v);
+    loadScript(cartbotUrl);
   });
 })();
 </script>

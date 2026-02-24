@@ -22,7 +22,7 @@ export async function syncGiftRules(admin: any, shop: string) {
         });
 
         // 3. Mapăm datele curat pentru robot
-        const rulesData = rules.map(r => ({
+        const rulesData = rules.map((r: any) => ({
             id: r.id,
             triggerType: r.triggerType,
             minCartValue: r.minCartValue,
@@ -30,10 +30,34 @@ export async function syncGiftRules(admin: any, shop: string) {
             triggerProductIds: r.triggerProductIds ? JSON.parse(r.triggerProductIds) : [],
             giftVariantIds: r.giftVariantIds ? JSON.parse(r.giftVariantIds) : [],
             applyIfAlreadyInCart: r.applyIfAlreadyInCart,
+
+            // Logic Flags
+            requireConsent: r.requireConsent,
+            oncePerSession: r.oncePerSession,
+            reverseLogic: r.reverseLogic,
+            ajaxOnly: r.ajaxOnly,
+            applyForEachCondition: r.applyForEachCondition,
+
+            // Notifications
             notificationEnabled: r.notificationEnabled ?? true,
             notificationText: r.notificationText || "Free gift added to your order!",
             notificationBgColor: r.notificationBgColor || "#1a1a1a",
             notificationTextColor: r.notificationTextColor || "#ffffff",
+
+            // Web Popup Customization
+            consentTitle: r.consentTitle || "You unlocked a Free Gift!",
+            consentContent: r.consentContent || "Would you like to add a free promotional item to your cart?",
+            consentAcceptText: r.consentAcceptText || "Yes, add gift",
+            consentDeclineText: r.consentDeclineText || "No, thanks",
+            consentBgColor: r.consentBgColor || "#ffffff",
+            consentTextColor: r.consentTextColor || "#1a1a1a",
+            consentAcceptBgColor: r.consentAcceptBgColor || "#1a1a1a",
+            consentAcceptTextColor: r.consentAcceptTextColor || "#ffffff",
+            consentDeclineBgColor: r.consentDeclineBgColor || "transparent",
+            consentDeclineTextColor: r.consentDeclineTextColor || "#1a1a1a",
+            consentTitleColor: r.consentTitleColor || "#1a1a1a",
+            consentIcon: r.consentIcon || "🎁",
+
             startDate: r.startDate ? new Date(r.startDate).getTime() : null,
             endDate: r.endDate ? new Date(r.endDate).getTime() : null,
             isActive: true
