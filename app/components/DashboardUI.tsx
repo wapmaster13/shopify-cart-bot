@@ -7,6 +7,7 @@ import {
     Badge as PolarisBadge,
     BlockStack,
     InlineStack,
+    Banner,
 } from "@shopify/polaris";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -431,67 +432,174 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop }: Dashboard
             <div style={{ maxWidth: "1100px", margin: "0 auto", paddingBottom: "100px" }}>
                 <AnimatedHeader activeRoutes={activeRoutes} isAppEmbedActive={isAppEmbedActive} />
 
-                <Layout>
-                    <Layout.Section>
-                        <div style={{ display: "grid", gridTemplateColumns: "60% 40%", gap: "20px", marginBottom: "40px" }}>
-                            <FeatureCard />
-                            <PlanCard />
-                        </div>
-                    </Layout.Section>
-
-                    <Layout.Section>
-                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-                            <InlineStack align="space-between" blockAlign="center">
-                                <Text as="h2" variant="headingLg">Your Bots</Text>
-                                <motion.button
-                                    whileHover={{ scale: 1.05, background: "rgba(0,0,0,0.05)" }}
-                                    whileTap={{ scale: 0.95 }}
-                                    style={{
-                                        background: "transparent", border: "1px solid #cbd5e1", borderRadius: "8px",
-                                        padding: "6px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                                        fontSize: "0.85rem", fontWeight: 600, color: "#475569"
-                                    }}
-                                >
-                                    <MoreHorizontal size={16} />
-                                    Filter
-                                </motion.button>
-                            </InlineStack>
-                        </motion.div>
-
-                        <div style={{ marginTop: "20px" }}>
-                            <AnimatePresence>
-                                {rules.length === 0 ? (
-                                    <motion.div
-                                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                                        style={{ ...glassStyle, padding: "60px", textAlign: "center" }}
+                {isAppEmbedActive === false && (
+                    <div style={{ marginBottom: "24px" }}>
+                        <Banner
+                            title="⚠️ Your CartBot is not yet live on your store!"
+                            tone="critical"
+                        >
+                            <Text as="p">
+                                To start offering free gifts, you must enable the App Embed in your theme settings. This takes 10 seconds and requires no coding.
+                            </Text>
+                            <div style={{ marginTop: "16px", display: "flex", gap: "12px" }}>
+                                {shop && (
+                                    <PolarisButton
+                                        variant="primary"
+                                        onClick={() => window.open(`https://${shop}/admin/themes/current/editor?context=apps&activateAppId=23b72d3c-0558-c17c-80a5-aed8a4b369eb3220dea9/cart_bot_embed`, "_blank")}
                                     >
-                                        <Bot size={48} color="#cbd5e1" style={{ margin: "0 auto 20px" }} />
-                                        <Text as="h3" variant="headingMd" tone="subdued">No bots active yet</Text>
-                                        <PolarisButton onClick={() => navigate(activeRoutes.newRule)}>Launch your first bot</PolarisButton>
-                                    </motion.div>
-                                ) : (
-                                    rules.map((rule) => (
-                                        <BotCard
-                                            key={rule.id}
-                                            rule={rule}
-                                            onDelete={handleDelete}
-                                            onEdit={() => navigate(activeRoutes.editRule(rule.id))}
-                                        />
-                                    ))
+                                        Activate App Embed
+                                    </PolarisButton>
                                 )}
-                            </AnimatePresence>
-                        </div>
-                    </Layout.Section>
+                                <PolarisButton onClick={() => window.location.reload()}>
+                                    Verify Activation
+                                </PolarisButton>
+                            </div>
+                        </Banner>
+                    </div>
+                )}
 
-                    <Layout.Section>
-                        <MasteryHub
-                            isAppEmbedActive={isAppEmbedActive}
-                            hasBots={rules.length > 0}
-                            hasActiveBots={rules.some(r => r.isActive)}
-                            shop={shop}
-                        />
-                    </Layout.Section>
-                </Layout>
+                <div style={{ position: "relative" }}>
+                    <div style={{
+                        filter: isAppEmbedActive === false ? "blur(8px)" : "none",
+                        pointerEvents: isAppEmbedActive === false ? "none" : "auto",
+                        opacity: isAppEmbedActive === false ? 0.6 : 1,
+                        transition: "filter 0.3s ease, opacity 0.3s ease"
+                    }}>
+                        <Layout>
+                            <Layout.Section>
+                                <div style={{ display: "grid", gridTemplateColumns: "60% 40%", gap: "20px", marginBottom: "40px" }}>
+                                    <FeatureCard />
+                                    <PlanCard />
+                                </div>
+                            </Layout.Section>
+
+                            <Layout.Section>
+                                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                                    <InlineStack align="space-between" blockAlign="center">
+                                        <Text as="h2" variant="headingLg">Your Bots</Text>
+                                        <motion.button
+                                            whileHover={{ scale: 1.05, background: "rgba(0,0,0,0.05)" }}
+                                            whileTap={{ scale: 0.95 }}
+                                            style={{
+                                                background: "transparent", border: "1px solid #cbd5e1", borderRadius: "8px",
+                                                padding: "6px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                                                fontSize: "0.85rem", fontWeight: 600, color: "#475569"
+                                            }}
+                                        >
+                                            <MoreHorizontal size={16} />
+                                            Filter
+                                        </motion.button>
+                                    </InlineStack>
+                                </motion.div>
+
+                                <div style={{ marginTop: "20px" }}>
+                                    <AnimatePresence>
+                                        {rules.length === 0 ? (
+                                            <motion.div
+                                                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                                style={{ ...glassStyle, padding: "60px", textAlign: "center" }}
+                                            >
+                                                <Bot size={48} color="#cbd5e1" style={{ margin: "0 auto 20px" }} />
+                                                <Text as="h3" variant="headingMd" tone="subdued">No bots active yet</Text>
+                                                <PolarisButton onClick={() => navigate(activeRoutes.newRule)}>Launch your first bot</PolarisButton>
+                                            </motion.div>
+                                        ) : (
+                                            rules.map((rule) => (
+                                                <BotCard
+                                                    key={rule.id}
+                                                    rule={rule}
+                                                    onDelete={handleDelete}
+                                                    onEdit={() => navigate(activeRoutes.editRule(rule.id))}
+                                                />
+                                            ))
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            </Layout.Section>
+
+                            <Layout.Section>
+                                <MasteryHub
+                                    isAppEmbedActive={isAppEmbedActive}
+                                    hasBots={rules.length > 0}
+                                    hasActiveBots={rules.some(r => r.isActive)}
+                                    shop={shop}
+                                />
+                            </Layout.Section>
+                        </Layout>
+                    </div>
+
+                    {isAppEmbedActive === false && (
+                        <div style={{
+                            position: "absolute",
+                            top: "10%",
+                            left: "50%",
+                            transform: "translateX(-50%)",
+                            width: "100%",
+                            maxWidth: "480px",
+                            zIndex: 10,
+                        }}>
+                            <motion.div
+                                style={{
+                                    ...glassStyle,
+                                    background: "rgba(255, 255, 255, 0.95)",
+                                    padding: "32px",
+                                    boxShadow: "0 20px 40px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05)"
+                                }}
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                transition={{ delay: 0.2, type: "spring", stiffness: 300, damping: 25 }}
+                            >
+                                <BlockStack gap="400">
+                                    <div style={{ textAlign: "center", marginBottom: "8px" }}>
+                                        <div style={{ background: "rgba(239, 68, 68, 0.1)", width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+                                            <Rocket size={24} color="#ef4444" />
+                                        </div>
+                                        <Text as="h2" variant="headingLg">Complete Setup</Text>
+                                        <Text as="p" tone="subdued">Finish these 2 steps to activate CartBot.</Text>
+                                    </div>
+
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "16px", background: "#f8fafc", padding: "20px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+                                        <div style={{ display: "flex", gap: "12px", alignItems: "center", opacity: rules.length > 0 ? 0.6 : 1 }}>
+                                            {rules.length > 0 ? <CheckCircle2 size={24} color="#22c55e" /> : <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid #cbd5e1", marginLeft: 2 }} />}
+                                            <Text as="span" variant="bodyMd" fontWeight="bold" tone={rules.length > 0 ? "subdued" : "base"} textDecorationLine={rules.length > 0 ? "line-through" : undefined}>Step 1: Create your first rule</Text>
+                                        </div>
+                                        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                                            <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid #3b82f6", marginLeft: 2, position: "relative" }}>
+                                                <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", background: "#3b82f6" }} />
+                                            </div>
+                                            <Text as="span" variant="bodyMd" fontWeight="bold">Step 2: Enable App Embed</Text>
+                                        </div>
+                                    </div>
+
+                                    {shop && (
+                                        <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                                            <button
+                                                onClick={() => window.open(`https://${shop}/admin/themes/current/editor?context=apps&activateAppId=23b72d3c-0558-c17c-80a5-aed8a4b369eb3220dea9/cart_bot_embed`, "_blank")}
+                                                style={{
+                                                    width: "100%", padding: "14px", background: "black", color: "white",
+                                                    border: "none", borderRadius: "8px", fontWeight: "bold", cursor: "pointer",
+                                                    fontSize: "1rem"
+                                                }}
+                                            >
+                                                Open Theme Editor
+                                            </button>
+                                            <button
+                                                onClick={() => window.location.reload()}
+                                                style={{
+                                                    width: "100%", padding: "12px", background: "transparent", color: "#64748b",
+                                                    border: "1px solid #cbd5e1", borderRadius: "8px", fontWeight: "bold", cursor: "pointer",
+                                                    fontSize: "0.9rem"
+                                                }}
+                                            >
+                                                I've enabled it, refresh status
+                                            </button>
+                                        </div>
+                                    )}
+                                </BlockStack>
+                            </motion.div>
+                        </div>
+                    )}
+                </div>
             </div>
         </Page>
     );
