@@ -36,7 +36,7 @@ export async function action({ request, params }: { request: Request, params: an
     const updatedRule = await prisma.giftRule.update({
         where: { id: params.id },
         data: {
-            triggerAmount,
+            minCartValue: triggerAmount,
             giftVariantId,
         },
     });
