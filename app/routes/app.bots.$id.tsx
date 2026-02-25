@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect } from "react";
-import { redirect } from "@remix-run/node";
+import { redirect, json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { useActionData, useNavigation, useSubmit } from "@remix-run/react";
 import {
     Page, Layout, Card, Text, BlockStack, InlineStack, TextField,
     Select, Button, Box, Divider, Badge, Banner, Checkbox,
-    DatePicker, Popover, Icon, Tooltip
+    DatePicker, Popover, Icon, Tooltip, Modal
 } from "@shopify/polaris";
 import { CalendarIcon, LockIcon } from "@shopify/polaris-icons";
-import { authenticate } from "../shopify.server";
+import { authenticate, MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN } from "../shopify.server";
 import prisma from "../db.server";
 import { syncGiftRules } from "../utils/metafield.server";
 import { motion, AnimatePresence } from "framer-motion";
@@ -83,11 +83,26 @@ export async function loader({ request, params }: { request: Request, params: { 
         console.error("CartBot: Failed to fetch node titles for UI", e);
     }
 
-    return { rule, preloadedTriggerVariants, preloadedGiftVariants };
+    const { billing } = await authenticate.admin(request);
+    const billingCheck = await billing.check({
+        plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
+        isTest: true,
+    });
+    let currentPlan = "FREE";
+    if (billingCheck.hasActivePayment) {
+        const activeSubscriptions = billingCheck.appSubscriptions || [];
+        if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
+            currentPlan = "ULTIMATE";
+        } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
+            currentPlan = "PRO";
+        }
+    }
+
+    return { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan };
 }
 
 export async function action({ request, params }: { request: Request, params: any }) {
-    const { admin, session } = await authenticate.admin(request);
+    const { admin, session, billing } = await authenticate.admin(request);
     const shop = session.shop;
     const formData = await request.formData();
     const intent = formData.get("intent");
@@ -144,11 +159,13 @@ export async function action({ request, params }: { request: Request, params: an
     const notificationTextColor = formData.get("notificationTextColor") as string || "#ffffff";
 
     // Scheduling
-    const startDateRaw = formData.get("startDate") as string;
-    const endDateRaw = formData.get("endDate") as string;
-    const isScheduled = formData.has("startDate") || formData.has("endDate");
-    const startDate = startDateRaw && isScheduled ? new Date(startDateRaw) : null;
-    const endDate = endDateRaw && isScheduled ? new Date(endDateRaw) : null;
+    let startDateRaw = formData.get("startDate") as string;
+    let endDateRaw = formData.get("endDate") as string;
+    let isScheduled = formData.has("startDate") || formData.has("endDate");
+    let startDate = startDateRaw && isScheduled ? new Date(startDateRaw) : null;
+    let endDate = endDateRaw && isScheduled ? new Date(endDateRaw) : null;
+
+    if (!name) return json({ error: "Bot name is required" }, { status: 400 });
 
     // Time-Evaluation Engine: Auto-Revive or Auto-Expire based on newly saved dates
     const now = new Date();
@@ -164,13 +181,52 @@ export async function action({ request, params }: { request: Request, params: an
         }
     }
 
-    if (!name) return Response.json({ error: "Bot name is required" }, { status: 400 });
+    // Billing Enforcements
+    const billingCheck = await billing.check({
+        plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
+        isTest: true,
+    });
+    let currentPlan = "FREE";
+    if (billingCheck.hasActivePayment) {
+        const activeSubscriptions = billingCheck.appSubscriptions || [];
+        if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
+            currentPlan = "ULTIMATE";
+        } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
+            currentPlan = "PRO";
+        }
+    }
+
+    // Enforce FREE Plan Limitations
+    if (currentPlan === "FREE") {
+        if (finalStatus === "ACTIVE") {
+            const activeBotsCount = await prisma.giftRule.count({
+                where: {
+                    shop,
+                    isActive: true,
+                    id: { not: params.id } // Exclude current bot being edited
+                }
+            });
+            if (activeBotsCount >= 1) {
+                return json({ error: "Free plan limit reached. You can only have 1 active bot. Please downgrade another bot to Paused or upgrade your plan." }, { status: 400 });
+            }
+        }
+
+        // Sanitize PRO Triggers
+        if (triggerType === "QUANTITY" || triggerType === "COMBINED") {
+            return json({ error: "Advanced triggers are only available on PRO plans." }, { status: 400 });
+        }
+
+        // Sanitize PRO Scheduling
+        startDate = null;
+        endDate = null;
+        isScheduled = false;
+    }
 
     // Validate Trigger Products
     if (triggerType === "PRODUCTS" || triggerType === "COMBINED") {
         const productIds = JSON.parse(triggerProductIds || "[]");
         if (productIds.length === 0) {
-            return Response.json({ error: "At least one trigger product is required." }, { status: 400 });
+            return json({ error: "At least one trigger product is required." }, { status: 400 });
         }
     }
 
@@ -222,7 +278,7 @@ export async function action({ request, params }: { request: Request, params: an
         return redirect("/app");
     } catch (e) {
         console.error("Update Bot Error:", e);
-        return Response.json({ error: "Failed to update bot. Check server logs." }, { status: 500 });
+        return json({ error: "Failed to update bot. Check server logs." }, { status: 500 });
     }
 }
 
@@ -272,27 +328,65 @@ const SectionHeader = ({ icon: Icon, title, description }: any) => (
     </div>
 );
 
-const RadioCard = ({ selected, id, icon: Icon, label, onClick }: any) => (
+const RadioCard = ({ selected, id, icon: IconComponent, label, onClick, locked, onLockedClick }: any) => (
     <motion.div
         whileTap={{ scale: 0.98 }}
-        onClick={() => onClick(id)}
+        onClick={locked ? onLockedClick : () => onClick(id)}
         style={{
             padding: "16px",
             borderRadius: "12px",
             border: selected ? "2px solid #6366f1" : "1px solid #cbd5e1",
-            background: selected ? "rgba(99, 102, 241, 0.05)" : "white",
-            cursor: "pointer",
+            background: locked ? "#f8fafc" : selected ? "rgba(99, 102, 241, 0.05)" : "white",
+            cursor: locked ? "not-allowed" : "pointer",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             gap: "8px",
-            transition: "all 0.2s"
+            transition: "all 0.2s",
+            opacity: locked ? 0.6 : 1,
+            position: "relative"
         }}
     >
-        <Icon size={24} color={selected ? "#6366f1" : "#64748b"} />
+        {locked && (
+            <div style={{ position: "absolute", top: 8, right: 8 }}>
+                <Lock size={14} color="#64748b" />
+            </div>
+        )}
+        <IconComponent size={24} color={selected ? "#6366f1" : "#64748b"} />
         <Text as="span" fontWeight={selected ? "bold" : "regular"} variant="bodySm">{label}</Text>
     </motion.div>
 );
+
+const ProFeatureLock = ({ isLocked, onUnlockRequest, children }: any) => {
+    if (!isLocked) return <>{children}</>;
+    return (
+        <div style={{ position: "relative" }}>
+            <div
+                onClick={onUnlockRequest}
+                style={{
+                    position: "absolute",
+                    top: -8, left: -8, right: -8, bottom: -8,
+                    background: "rgba(255, 255, 255, 0.4)",
+                    zIndex: 10,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backdropFilter: "blur(2px)",
+                    borderRadius: "12px",
+                }}
+            >
+                <div style={{ background: "white", padding: "8px 16px", borderRadius: "20px", boxShadow: "0 6px 15px rgba(0,0,0,0.1)", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Lock size={16} color="#6366f1" />
+                    <Text as="span" variant="bodyMd" fontWeight="bold">PRO Feature</Text>
+                </div>
+            </div>
+            <div style={{ opacity: 0.5, pointerEvents: "none" }}>
+                {children}
+            </div>
+        </div>
+    );
+};
 
 const LogicSwitch = ({ icon: Icon, label, description, checked, onChange, color = "#6366f1" }: any) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0" }}>
@@ -312,7 +406,9 @@ const LogicSwitch = ({ icon: Icon, label, description, checked, onChange, color 
 // --- Main Page Component ---
 
 export default function BotArchitectEdit() {
-    const { rule, preloadedTriggerVariants, preloadedGiftVariants } = useLoaderData<typeof loader>();
+    const { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan } = useLoaderData<typeof loader>();
+    const hasProAccess = currentPlan === "PRO" || currentPlan === "ULTIMATE";
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const nav = useNavigation();
     const submit = useSubmit();
     const actionData = useActionData<{ error?: string }>();
@@ -487,6 +583,21 @@ export default function BotArchitectEdit() {
 
     return (
         <Page backAction={{ content: "Dashboard", url: "/app" }} title="Edit Bot">
+            <Modal
+                open={showUpgradeModal}
+                onClose={() => setShowUpgradeModal(false)}
+                title="Unlock PRO Features"
+                primaryAction={{
+                    content: "Upgrade Now",
+                    onAction: () => window.location.href = "/app/pricing"
+                }}
+            >
+                <Modal.Section>
+                    <Text as="p">
+                        This is a Pro Feature. Unlock advanced growth tools, limitless triggers, and custom UI options to boost your sales.
+                    </Text>
+                </Modal.Section>
+            </Modal>
             <motion.div
                 variants={staggerContainer}
                 initial="hidden"
@@ -550,9 +661,11 @@ export default function BotArchitectEdit() {
                                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                     <Icon source={CalendarIcon} tone="base" />
                                     <Text as="span" variant="bodyMd">Schedule Bot</Text>
-                                    <Badge tone="success">PRO</Badge>
+                                    {!hasProAccess && <Badge tone="info">PRO</Badge>}
                                 </div>
-                                <Checkbox label="Enable Schedule" checked={isScheduled} onChange={setIsScheduled} />
+                                <div onClick={(e) => { if (!hasProAccess) { e.preventDefault(); setShowUpgradeModal(true); } }}>
+                                    <Checkbox label="Enable Schedule" checked={isScheduled} disabled={!hasProAccess} onChange={setIsScheduled} />
+                                </div>
                             </InlineStack>
                             <AnimatePresence>
                                 {isScheduled && (
@@ -572,8 +685,8 @@ export default function BotArchitectEdit() {
                         <SectionHeader icon={Zap} title="Smart Triggers" description="Define the 'When' of your automation." />
                         <BlockStack gap="400">
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "10px" }}>
-                                {[{ id: "PRODUCTS", icon: Package, label: "Products" }, { id: "CART_VALUE", icon: ShoppingCart, label: "Cart Value" }, { id: "QUANTITY", icon: Layers, label: "Min/Max Qty" }, { id: "COMBINED", icon: Cpu, label: "Combined" }].map(t => (
-                                    <RadioCard key={t.id} {...t} selected={triggerType === t.id} onClick={setTriggerType} />
+                                {[{ id: "PRODUCTS", icon: Package, label: "Products" }, { id: "CART_VALUE", icon: ShoppingCart, label: "Cart Value" }, { id: "QUANTITY", icon: Layers, label: "Min/Max Qty", locked: !hasProAccess }, { id: "COMBINED", icon: Cpu, label: "Combined", locked: !hasProAccess }].map(t => (
+                                    <RadioCard key={t.id} {...t} selected={triggerType === t.id} onClick={setTriggerType} onLockedClick={() => setShowUpgradeModal(true)} />
                                 ))}
                             </div>
 
@@ -704,72 +817,74 @@ export default function BotArchitectEdit() {
                                             <strong>Legal Note:</strong> As per Shopify requirements, you must obtain buyer consent before adding non-essential items that increase cart value.
                                         </div>
 
-                                        <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "100px 1fr", gap: "16px" }}>
-                                            <TextField label="Icon / Emoji" value={consentIcon} onChange={setConsentIcon} autoComplete="off" />
-                                            <TextField label="Popup Title" value={consentTitle} onChange={setConsentTitle} autoComplete="off" />
-                                        </div>
-                                        <div style={{ marginTop: "12px" }}>
-                                            <TextField label="Popup Content" value={consentContent} onChange={setConsentContent} autoComplete="off" multiline={2} />
-                                        </div>
-                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                                            <TextField label="Accept Button Text" value={consentAcceptText} onChange={setConsentAcceptText} autoComplete="off" />
-                                            <TextField label="Decline Button Text" value={consentDeclineText} onChange={setConsentDeclineText} autoComplete="off" />
-                                        </div>
-                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                                            <BlockStack gap="200">
-                                                <Text as="span" variant="bodyMd">Background Color</Text>
-                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                    <input type="color" value={consentBgColor.startsWith("#") ? consentBgColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
-                                                    <TextField label="" value={consentBgColor} onChange={setConsentBgColor} autoComplete="off" />
-                                                </div>
-                                            </BlockStack>
-                                            <BlockStack gap="200">
-                                                <Text as="span" variant="bodyMd">Popup Title Color</Text>
-                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                    <input type="color" value={consentTitleColor.startsWith("#") ? consentTitleColor.slice(0, 7) : "#1a1a1a"} onChange={(e) => setConsentTitleColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
-                                                    <TextField label="" value={consentTitleColor} onChange={setConsentTitleColor} autoComplete="off" />
-                                                </div>
-                                            </BlockStack>
-                                            <BlockStack gap="200">
-                                                <Text as="span" variant="bodyMd">Popup Content Color</Text>
-                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                    <input type="color" value={consentTextColor.startsWith("#") ? consentTextColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
-                                                    <TextField label="" value={consentTextColor} onChange={setConsentTextColor} autoComplete="off" />
-                                                </div>
-                                            </BlockStack>
-                                        </div>
-                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                                            <BlockStack gap="200">
-                                                <Text as="span" variant="bodyMd">Accept Button BG</Text>
-                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                    <input type="color" value={consentAcceptBgColor.startsWith("#") ? consentAcceptBgColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentAcceptBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
-                                                    <TextField label="" value={consentAcceptBgColor} onChange={setConsentAcceptBgColor} autoComplete="off" />
-                                                </div>
-                                            </BlockStack>
-                                            <BlockStack gap="200">
-                                                <Text as="span" variant="bodyMd">Accept Button Text</Text>
-                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                    <input type="color" value={consentAcceptTextColor.startsWith("#") ? consentAcceptTextColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentAcceptTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
-                                                    <TextField label="" value={consentAcceptTextColor} onChange={setConsentAcceptTextColor} autoComplete="off" />
-                                                </div>
-                                            </BlockStack>
-                                        </div>
-                                        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                                            <BlockStack gap="200">
-                                                <Text as="span" variant="bodyMd">Decline Button BG</Text>
-                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                    <input type="color" value={consentDeclineBgColor.startsWith("#") ? consentDeclineBgColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentDeclineBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
-                                                    <TextField label="" value={consentDeclineBgColor} onChange={setConsentDeclineBgColor} autoComplete="off" />
-                                                </div>
-                                            </BlockStack>
-                                            <BlockStack gap="200">
-                                                <Text as="span" variant="bodyMd">Decline Button Text</Text>
-                                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                    <input type="color" value={consentDeclineTextColor.startsWith("#") ? consentDeclineTextColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentDeclineTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
-                                                    <TextField label="" value={consentDeclineTextColor} onChange={setConsentDeclineTextColor} autoComplete="off" />
-                                                </div>
-                                            </BlockStack>
-                                        </div>
+                                        <ProFeatureLock isLocked={!hasProAccess} onUnlockRequest={() => setShowUpgradeModal(true)}>
+                                            <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "100px 1fr", gap: "16px" }}>
+                                                <TextField label="Icon / Emoji" value={consentIcon} onChange={setConsentIcon} autoComplete="off" />
+                                                <TextField label="Popup Title" value={consentTitle} onChange={setConsentTitle} autoComplete="off" />
+                                            </div>
+                                            <div style={{ marginTop: "12px" }}>
+                                                <TextField label="Popup Content" value={consentContent} onChange={setConsentContent} autoComplete="off" multiline={2} />
+                                            </div>
+                                            <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                                <TextField label="Accept Button Text" value={consentAcceptText} onChange={setConsentAcceptText} autoComplete="off" />
+                                                <TextField label="Decline Button Text" value={consentDeclineText} onChange={setConsentDeclineText} autoComplete="off" />
+                                            </div>
+                                            <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Background Color</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input type="color" value={consentBgColor.startsWith("#") ? consentBgColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                        <TextField label="" value={consentBgColor} onChange={setConsentBgColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Popup Title Color</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input type="color" value={consentTitleColor.startsWith("#") ? consentTitleColor.slice(0, 7) : "#1a1a1a"} onChange={(e) => setConsentTitleColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                        <TextField label="" value={consentTitleColor} onChange={setConsentTitleColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Popup Content Color</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input type="color" value={consentTextColor.startsWith("#") ? consentTextColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                        <TextField label="" value={consentTextColor} onChange={setConsentTextColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                            </div>
+                                            <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Accept Button BG</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input type="color" value={consentAcceptBgColor.startsWith("#") ? consentAcceptBgColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentAcceptBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                        <TextField label="" value={consentAcceptBgColor} onChange={setConsentAcceptBgColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Accept Button Text</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input type="color" value={consentAcceptTextColor.startsWith("#") ? consentAcceptTextColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentAcceptTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                        <TextField label="" value={consentAcceptTextColor} onChange={setConsentAcceptTextColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                            </div>
+                                            <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Decline Button BG</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input type="color" value={consentDeclineBgColor.startsWith("#") ? consentDeclineBgColor.slice(0, 7) : "#ffffff"} onChange={(e) => setConsentDeclineBgColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                        <TextField label="" value={consentDeclineBgColor} onChange={setConsentDeclineBgColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                                <BlockStack gap="200">
+                                                    <Text as="span" variant="bodyMd">Decline Button Text</Text>
+                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                        <input type="color" value={consentDeclineTextColor.startsWith("#") ? consentDeclineTextColor.slice(0, 7) : "#000000"} onChange={(e) => setConsentDeclineTextColor(e.target.value)} style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }} />
+                                                        <TextField label="" value={consentDeclineTextColor} onChange={setConsentDeclineTextColor} autoComplete="off" />
+                                                    </div>
+                                                </BlockStack>
+                                            </div>
+                                        </ProFeatureLock>
 
                                         <div style={{ marginTop: "24px", position: "relative", height: "200px", background: "#e2e8f0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                             <div style={{ position: "absolute", top: 10, left: 10, fontSize: "0.8rem", color: "#64748b" }}>Live Preview</div>
@@ -824,32 +939,34 @@ export default function BotArchitectEdit() {
                                                 helpText="Keep it short and exciting!"
                                             />
 
-                                            <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                                                <BlockStack gap="200">
-                                                    <Text as="span" variant="bodyMd">Background Color</Text>
-                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                        <input
-                                                            type="color"
-                                                            value={notificationBgColor}
-                                                            onChange={(e) => setNotificationBgColor(e.target.value)}
-                                                            style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
-                                                        />
-                                                        <TextField label="" value={notificationBgColor.toUpperCase()} onChange={setNotificationBgColor} autoComplete="off" />
-                                                    </div>
-                                                </BlockStack>
-                                                <BlockStack gap="200">
-                                                    <Text as="span" variant="bodyMd">Text Color</Text>
-                                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                                                        <input
-                                                            type="color"
-                                                            value={notificationTextColor}
-                                                            onChange={(e) => setNotificationTextColor(e.target.value)}
-                                                            style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
-                                                        />
-                                                        <TextField label="" value={notificationTextColor.toUpperCase()} onChange={setNotificationTextColor} autoComplete="off" />
-                                                    </div>
-                                                </BlockStack>
-                                            </div>
+                                            <ProFeatureLock isLocked={!hasProAccess} onUnlockRequest={() => setShowUpgradeModal(true)}>
+                                                <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                                    <BlockStack gap="200">
+                                                        <Text as="span" variant="bodyMd">Background Color</Text>
+                                                        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                            <input
+                                                                type="color"
+                                                                value={notificationBgColor}
+                                                                onChange={(e) => setNotificationBgColor(e.target.value)}
+                                                                style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
+                                                            />
+                                                            <TextField label="" value={notificationBgColor.toUpperCase()} onChange={setNotificationBgColor} autoComplete="off" />
+                                                        </div>
+                                                    </BlockStack>
+                                                    <BlockStack gap="200">
+                                                        <Text as="span" variant="bodyMd">Text Color</Text>
+                                                        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                                            <input
+                                                                type="color"
+                                                                value={notificationTextColor}
+                                                                onChange={(e) => setNotificationTextColor(e.target.value)}
+                                                                style={{ width: "40px", height: "40px", padding: "0", border: "1px solid #dfe3e8", borderRadius: "8px", cursor: "pointer" }}
+                                                            />
+                                                            <TextField label="" value={notificationTextColor.toUpperCase()} onChange={setNotificationTextColor} autoComplete="off" />
+                                                        </div>
+                                                    </BlockStack>
+                                                </div>
+                                            </ProFeatureLock>
 
                                             <div style={{ marginTop: "24px" }}>
                                                 <Text as="span" variant="bodyMd" tone="subdued">Live Preview</Text>

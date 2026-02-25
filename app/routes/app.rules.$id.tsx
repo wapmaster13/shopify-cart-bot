@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { redirect } from "@remix-run/node";
+import { redirect, json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { useActionData, useNavigation, useSubmit } from "@remix-run/react";
 import { Page, Layout, Card, FormLayout, TextField, Button, BlockStack, Banner, Text } from "@shopify/polaris";
@@ -29,7 +29,7 @@ export async function action({ request, params }: { request: Request, params: an
     const shop = session.shop;
 
     if (isNaN(triggerAmount) || !giftVariantId) {
-        return Response.json({ error: "Invalid input: Please provide a valid amount and variant ID." }, { status: 400 });
+        return json({ error: "Invalid input: Please provide a valid amount and variant ID." }, { status: 400 });
     }
 
     // Update DB

@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "e2aa7e28cf273e30e3a843f59bc60b78"
-name = "gifty-ttsdsasasasa"
+name = "GiftCart: Gift with purchase"
 application_url = "https://example.com"
 embedded = true
 

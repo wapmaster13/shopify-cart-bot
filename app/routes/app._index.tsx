@@ -2,12 +2,12 @@ import { Page, Layout, Card, Text, BlockStack, Button, EmptyState, Badge, IndexT
 import { TitleBar } from "@shopify/app-bridge-react";
 import { useLoaderData, Link } from "@remix-run/react";
 import prisma from "../db.server";
-import { authenticate } from "../shopify.server";
+import { authenticate, MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN } from "../shopify.server";
 import { ensureCartTransform, syncGiftRules } from "../utils/metafield.server";
 import { checkAppEmbedStatus } from "../utils/theme.server";
 
 export async function loader({ request }: { request: Request }) {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin, session, billing } = await authenticate.admin(request);
 
   // 1. Auto-expire bots that have passed their End Date
   const now = new Date();
@@ -38,7 +38,23 @@ export async function loader({ request }: { request: Request }) {
   const isAppEmbedActive = await checkAppEmbedStatus(admin);
   const shop = session.shop;
 
-  return { rules, isAppEmbedActive, shop };
+  // Check billing
+  const billingCheck = await billing.check({
+    plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
+    isTest: true,
+  });
+
+  let currentPlan = "FREE";
+  if (billingCheck.hasActivePayment) {
+    const activeSubscriptions = billingCheck.appSubscriptions || [];
+    if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
+      currentPlan = "ULTIMATE";
+    } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
+      currentPlan = "PRO";
+    }
+  }
+
+  return { rules, isAppEmbedActive, shop, currentPlan };
 }
 
 import { useSubmit } from "@remix-run/react";
@@ -103,14 +119,18 @@ import { DashboardUI } from "../components/DashboardUI";
 import { useNavigate } from "@remix-run/react";
 
 export default function Index() {
-  const { rules, isAppEmbedActive, shop } = useLoaderData<typeof loader>();
+  const { rules, isAppEmbedActive, shop, currentPlan } = useLoaderData<typeof loader>();
   const navigate = useNavigate(); // Inițializăm router-ul Remix
+
+  const handleCreateRule = () => {
+    navigate("/app/bots/new");
+  };
 
   return (
     <Page>
       <TitleBar title="GiftBot Dashboard">
         {/* Folosim navigate() în loc de window.open pentru a păstra totul ca un SPA (Single Page App) */}
-        <button variant="primary" onClick={() => navigate("/app/bots/new")}>
+        <button variant="primary" onClick={handleCreateRule}>
           Create Rule
         </button>
       </TitleBar>
@@ -120,6 +140,8 @@ export default function Index() {
         rules={rules}
         isAppEmbedActive={isAppEmbedActive}
         shop={shop}
+        currentPlan={currentPlan}
+        onNewRule={handleCreateRule}
         routes={{
           newRule: "/app/bots/new",
           editRule: (id: string) => `/app/bots/${id}`

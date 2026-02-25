@@ -3,6 +3,7 @@ import {
   AppDistribution,
   shopifyApp,
   LATEST_API_VERSION,
+  BillingInterval,
 } from "@shopify/shopify-app-remix/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import { restResources } from "@shopify/shopify-api/rest/admin/2024-07";
@@ -14,6 +15,9 @@ console.log("SHOPIFY_API_KEY:", process.env.SHOPIFY_API_KEY ? "Set" : "Not Set")
 console.log("SCOPES:", process.env.SCOPES);
 console.log("------------------------------------");
 
+export const MONTHLY_PRO_PLAN = 'Pro Plan - $19.99';
+export const MONTHLY_ULTIMATE_PLAN = 'Ultimate Plan - $49.99';
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
@@ -24,6 +28,18 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
   restResources,
+  billing: {
+    [MONTHLY_PRO_PLAN]: {
+      amount: 19.99,
+      currencyCode: 'USD',
+      interval: BillingInterval.Every30Days as any,
+    },
+    [MONTHLY_ULTIMATE_PLAN]: {
+      amount: 49.99,
+      currencyCode: 'USD',
+      interval: BillingInterval.Every30Days as any,
+    },
+  },
   future: {
     unstable_newEmbeddedAuthStrategy: true,
   },

@@ -53,6 +53,8 @@ interface DashboardUIProps {
     routes?: DashboardRoutes;
     isAppEmbedActive?: boolean;
     shop?: string;
+    currentPlan?: string;
+    onNewRule?: () => void;
 }
 
 // --- Styles (Soft Glass Aesthetic) ---
@@ -73,7 +75,7 @@ const cardHoverStyle = {
 
 // --- Components ---
 
-const AnimatedHeader = ({ activeRoutes, isAppEmbedActive }: { activeRoutes: DashboardRoutes, isAppEmbedActive?: boolean }) => {
+const AnimatedHeader = ({ activeRoutes, isAppEmbedActive, onNewRule }: { activeRoutes: DashboardRoutes, isAppEmbedActive?: boolean, onNewRule?: () => void }) => {
     const navigate = useNavigate();
     return (
         <div style={{ marginBottom: "2rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -118,7 +120,7 @@ const AnimatedHeader = ({ activeRoutes, isAppEmbedActive }: { activeRoutes: Dash
 
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <button
-                    onClick={() => navigate(activeRoutes.newRule)}
+                    onClick={onNewRule ? onNewRule : () => navigate(activeRoutes.newRule)}
                     style={{
                         border: "none",
                         cursor: "pointer",
@@ -179,7 +181,13 @@ const FeatureCard = () => {
     )
 }
 
-const PlanCard = () => {
+const PlanCard = ({ plan = "FREE", activeBotsCount }: { plan?: string, activeBotsCount: number }) => {
+    const navigate = useNavigate();
+    const isFree = plan === "FREE";
+    const isPro = plan === "PRO";
+    const isUltimate = plan === "ULTIMATE";
+    const limit = isFree ? 1 : "∞";
+
     return (
         <motion.div
             style={{ ...glassStyle, padding: "24px" }}
@@ -195,15 +203,16 @@ const PlanCard = () => {
                         borderRadius: 8, fontSize: "0.75rem", fontWeight: "bold",
                         display: "flex", alignItems: "center", gap: 6
                     }}>
-                        <Crown size={12} fill="gold" stroke="none" />
-                        PRO
+                        <Crown size={12} fill={isUltimate ? "purple" : isPro ? "gold" : "gray"} stroke="none" />
+                        {plan}
                     </div>
                 </InlineStack>
                 <InlineStack align="start" gap="200" blockAlign="baseline">
-                    <Text as="h2" variant="heading2xl">24</Text>
-                    <Text as="span" tone="subdued">/ 50 active bots</Text>
+                    <Text as="h2" variant="heading2xl">{activeBotsCount}</Text>
+                    <Text as="span" tone="subdued">/ {limit} active bots</Text>
                 </InlineStack>
                 <motion.button
+                    onClick={() => navigate("/app/pricing")}
                     whileHover={{ scale: 1.02, boxShadow: "0 0 15px rgba(255,215,0, 0.3)" }}
                     style={{
                         width: "100%",
@@ -220,7 +229,7 @@ const PlanCard = () => {
                     }}
                 >
                     <Rocket size={16} />
-                    Upgrade Limit
+                    {isUltimate ? "Manage Subscription" : "Upgrade Limit"}
                 </motion.button>
             </BlockStack>
         </motion.div>
@@ -412,7 +421,7 @@ const MasteryHub = ({ isAppEmbedActive, hasBots, hasActiveBots, shop }: { isAppE
     )
 }
 
-export function DashboardUI({ rules, routes, isAppEmbedActive, shop }: DashboardUIProps) {
+export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan = "FREE", onNewRule }: DashboardUIProps) {
     const submit = useSubmit();
     const navigate = useNavigate();
 
@@ -430,7 +439,7 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop }: Dashboard
     return (
         <Page fullWidth>
             <div style={{ maxWidth: "1100px", margin: "0 auto", paddingBottom: "100px" }}>
-                <AnimatedHeader activeRoutes={activeRoutes} isAppEmbedActive={isAppEmbedActive} />
+                <AnimatedHeader activeRoutes={activeRoutes} isAppEmbedActive={isAppEmbedActive} onNewRule={onNewRule} />
 
                 {isAppEmbedActive === false && (
                     <div style={{ marginBottom: "24px" }}>
@@ -469,7 +478,7 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop }: Dashboard
                             <Layout.Section>
                                 <div style={{ display: "grid", gridTemplateColumns: "60% 40%", gap: "20px", marginBottom: "40px" }}>
                                     <FeatureCard />
-                                    <PlanCard />
+                                    <PlanCard plan={currentPlan} activeBotsCount={rules.filter(r => r.isActive).length} />
                                 </div>
                             </Layout.Section>
 
@@ -501,7 +510,9 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop }: Dashboard
                                             >
                                                 <Bot size={48} color="#cbd5e1" style={{ margin: "0 auto 20px" }} />
                                                 <Text as="h3" variant="headingMd" tone="subdued">No bots active yet</Text>
-                                                <PolarisButton onClick={() => navigate(activeRoutes.newRule)}>Launch your first bot</PolarisButton>
+                                                <div style={{ marginTop: "20px" }}>
+                                                    <PolarisButton variant="primary" onClick={onNewRule ? onNewRule : () => navigate(activeRoutes.newRule)}>Launch your first bot</PolarisButton>
+                                                </div>
                                             </motion.div>
                                         ) : (
                                             rules.map((rule) => (
