@@ -50,6 +50,8 @@ interface DashboardRoutes {
 interface DashboardUIProps {
     rules: GiftRule[];
     routes?: DashboardRoutes;
+    isAppEmbedActive?: boolean;
+    shop?: string;
 }
 
 // --- Styles (Soft Glass Aesthetic) ---
@@ -70,7 +72,7 @@ const cardHoverStyle = {
 
 // --- Components ---
 
-const AnimatedHeader = ({ activeRoutes }: { activeRoutes: DashboardRoutes }) => {
+const AnimatedHeader = ({ activeRoutes, isAppEmbedActive }: { activeRoutes: DashboardRoutes, isAppEmbedActive?: boolean }) => {
     const navigate = useNavigate();
     return (
         <div style={{ marginBottom: "2rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -85,10 +87,14 @@ const AnimatedHeader = ({ activeRoutes }: { activeRoutes: DashboardRoutes }) => 
                             Good afternoon, Alex
                         </Text>
                         <motion.div
-                            animate={{ boxShadow: ["0 0 0 0px rgba(34, 197, 94, 0.4)", "0 0 0 4px rgba(34, 197, 94, 0)"] }}
+                            animate={
+                                isAppEmbedActive
+                                    ? { boxShadow: ["0 0 0 0px rgba(34, 197, 94, 0.4)", "0 0 0 4px rgba(34, 197, 94, 0)"] }
+                                    : { opacity: [0.8, 1, 0.8] }
+                            }
                             transition={{ duration: 2, repeat: Infinity }}
                             style={{
-                                background: "#22c55e",
+                                background: isAppEmbedActive ? "#22c55e" : "#ef4444",
                                 color: "white",
                                 padding: "4px 12px",
                                 borderRadius: "20px",
@@ -100,7 +106,7 @@ const AnimatedHeader = ({ activeRoutes }: { activeRoutes: DashboardRoutes }) => 
                             }}
                         >
                             <div style={{ width: 6, height: 6, background: "white", borderRadius: "50%" }} />
-                            LIVE
+                            {isAppEmbedActive ? "LIVE" : "INACTIVE"}
                         </motion.div>
                     </InlineStack>
                 </motion.div>
@@ -308,7 +314,7 @@ const BotCard = ({ rule, onDelete, onEdit }: { rule: GiftRule, onDelete: (id: st
     )
 }
 
-const MasteryHub = () => {
+const MasteryHub = ({ isAppEmbedActive, hasBots, hasActiveBots, shop }: { isAppEmbedActive?: boolean, hasBots: boolean, hasActiveBots: boolean, shop?: string }) => {
     const [isOpen, setIsOpen] = useState(true);
 
     return (
@@ -342,9 +348,9 @@ const MasteryHub = () => {
                             {/* Steps */}
                             <BlockStack gap="400">
                                 {[
-                                    { icon: CheckCircle2, text: "Create your first spending rule", done: true },
-                                    { icon: PlayCircle, text: "Test checkout behavior", done: false },
-                                    { icon: Rocket, text: "Publish to live store", done: false }
+                                    { icon: CheckCircle2, text: "Enable the app embed block", done: !!isAppEmbedActive },
+                                    { icon: PlayCircle, text: "Create your first Bot", done: hasBots },
+                                    { icon: Rocket, text: "Publish to live store", done: hasActiveBots && !!isAppEmbedActive }
                                 ].map((step, i) => {
                                     const Icon = step.icon;
                                     return (
@@ -360,6 +366,19 @@ const MasteryHub = () => {
                                         </motion.div>
                                     )
                                 })}
+                                {!isAppEmbedActive && shop && (
+                                    <motion.button
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={() => window.open(`https://${shop}/admin/themes/current/editor?context=apps&appExt=23b72d3c-0558-c17c-80a5-aed8a4b369eb3220dea9`, "_blank")}
+                                        style={{
+                                            padding: "10px 16px", background: "black", color: "white", border: "none",
+                                            borderRadius: "8px", fontWeight: "bold", cursor: "pointer", width: "fit-content", marginTop: "10px"
+                                        }}
+                                    >
+                                        Open Theme Editor
+                                    </motion.button>
+                                )}
                             </BlockStack>
 
                             {/* Video Placeholder */}
@@ -392,7 +411,7 @@ const MasteryHub = () => {
     )
 }
 
-export function DashboardUI({ rules, routes }: DashboardUIProps) {
+export function DashboardUI({ rules, routes, isAppEmbedActive, shop }: DashboardUIProps) {
     const submit = useSubmit();
     const navigate = useNavigate();
 
@@ -410,7 +429,7 @@ export function DashboardUI({ rules, routes }: DashboardUIProps) {
     return (
         <Page fullWidth>
             <div style={{ maxWidth: "1100px", margin: "0 auto", paddingBottom: "100px" }}>
-                <AnimatedHeader activeRoutes={activeRoutes} />
+                <AnimatedHeader activeRoutes={activeRoutes} isAppEmbedActive={isAppEmbedActive} />
 
                 <Layout>
                     <Layout.Section>
@@ -465,7 +484,12 @@ export function DashboardUI({ rules, routes }: DashboardUIProps) {
                     </Layout.Section>
 
                     <Layout.Section>
-                        <MasteryHub />
+                        <MasteryHub
+                            isAppEmbedActive={isAppEmbedActive}
+                            hasBots={rules.length > 0}
+                            hasActiveBots={rules.some(r => r.isActive)}
+                            shop={shop}
+                        />
                     </Layout.Section>
                 </Layout>
             </div>

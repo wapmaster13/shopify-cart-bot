@@ -4,6 +4,7 @@ import { useLoaderData, Link } from "@remix-run/react";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { ensureCartTransform, syncGiftRules } from "../utils/metafield.server";
+import { checkAppEmbedStatus } from "../utils/theme.server";
 
 export async function loader({ request }: { request: Request }) {
   const { admin, session } = await authenticate.admin(request);
@@ -33,10 +34,11 @@ export async function loader({ request }: { request: Request }) {
     orderBy: { createdAt: 'desc' }
   });
 
-  // Ensure Function is Active
-  await ensureCartTransform(admin);
+  // Check App Embed Status
+  const isAppEmbedActive = await checkAppEmbedStatus(admin);
+  const shop = session.shop;
 
-  return { rules };
+  return { rules, isAppEmbedActive, shop };
 }
 
 import { useSubmit } from "@remix-run/react";
@@ -101,7 +103,7 @@ import { DashboardUI } from "../components/DashboardUI";
 import { useNavigate } from "@remix-run/react";
 
 export default function Index() {
-  const { rules } = useLoaderData<typeof loader>();
+  const { rules, isAppEmbedActive, shop } = useLoaderData<typeof loader>();
   const navigate = useNavigate(); // Inițializăm router-ul Remix
 
   return (
@@ -116,6 +118,8 @@ export default function Index() {
       {/* Transmitem rutele corecte către interfața Dashboard-ului */}
       <DashboardUI
         rules={rules}
+        isAppEmbedActive={isAppEmbedActive}
+        shop={shop}
         routes={{
           newRule: "/app/bots/new",
           editRule: (id: string) => `/app/bots/${id}`

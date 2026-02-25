@@ -14,8 +14,8 @@
     console.log("CartBot: Brain Loaded 🧠 v9.1 (Static CDN + Metafields)");
 
     const CONFIG = {
-        debounceTime: 800, // Sync delay (wait for WASM)
-        bucketDelay: 500,  // Token bucket refill delay
+        debounceTime: 200, // Sync delay (wait for WASM)
+        bucketDelay: 200,  // Token bucket refill delay
         bucketSize: 10,
         sections: ['cart-drawer', 'cart-icon-bubble', 'main-cart-items', 'cart-notification-button']
     };
@@ -279,16 +279,36 @@
             // Check Cart Value
             const cartValuePassed = cartTotal >= parseFloat(rule.minCartValue || 0);
 
-            // Check Product Purchase
+            // Check Product Purchase & Quantities
             const triggerIds = rule.triggerProductIds || [];
+            let matchingProductQty = 0;
+
             const productPassed = triggerIds.some(tid => {
                 const numId = extractId(tid);
                 return cart.items.some(i => i.product_id === numId || i.variant_id === numId || i.id === numId);
             });
 
+            cart.items.forEach(i => {
+                const isTrigger = triggerIds.some(tid => {
+                    const numId = extractId(tid);
+                    return i.product_id === numId || i.variant_id === numId || i.id === numId;
+                });
+                // Free gifts themselves shouldn't normally count towards the trigger quantities if avoid recursive, 
+                // but CartBot logic depends on item mapping. We exclude generated free gifts.
+                if (!i.properties || !i.properties['_FreeGift']) {
+                    if (triggerIds.length === 0 || isTrigger) {
+                        matchingProductQty += i.quantity;
+                    }
+                }
+            });
+
+            const totalQty = rule.countGlobalQuantity ? cart.items.filter(i => !i.properties || !i.properties['_FreeGift']).reduce((acc, obj) => acc + obj.quantity, 0) : matchingProductQty;
+            const quantityPassed = totalQty >= parseInt(rule.minQuantity || 0) && totalQty <= parseInt(rule.maxQuantity || 999999);
+
             if (rule.triggerType === 'CART_VALUE') eligible = cartValuePassed;
-            else if (rule.triggerType === 'PRODUCT_PURCHASE') eligible = productPassed;
-            else if (rule.triggerType === 'COMBINED') eligible = cartValuePassed && productPassed;
+            else if (rule.triggerType === 'PRODUCTS' || rule.triggerType === 'PRODUCT_PURCHASE') eligible = productPassed;
+            else if (rule.triggerType === 'QUANTITY') eligible = quantityPassed;
+            else if (rule.triggerType === 'COMBINED') eligible = cartValuePassed && productPassed && quantityPassed;
 
             if (eligible) {
                 const rawGifts = rule.giftVariantIds || (rule.giftVariants ? rule.giftVariants.map(v => v.id) : []);
@@ -344,11 +364,15 @@
                 showConsentPopup(consentRule, "Would you like to add an eligible free gift to your order?", async () => {
                     try {
                         const addItems = itemsToAdd.map(id => ({ id: id, quantity: 1, properties: { '_FreeGift': 'true' } }));
-                        await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                        const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ items: addItems })
                         });
-                        triggerSync(true); // Manually trigger since we handle result here
+                        if (res.ok) {
+                            triggerSync(true);
+                        } else {
+                            console.warn("CartBot: Failed to add gift via consent popup", await res.text());
+                        }
                     } catch (e) { console.error("CartBot: Add Gift Error", e); }
                 }, () => {
                     console.log("CartBot: User declined consent from manageGifts popup.");
@@ -361,12 +385,16 @@
                         quantity: 1,
                         properties: { '_FreeGift': 'true' }
                     }));
-                    await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                    const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ items: addItems })
                     });
-                    changesMade = true;
+                    if (res.ok) {
+                        changesMade = true;
+                    } else {
+                        console.warn("CartBot: Failed to add gift. Might be out of stock.", await res.text());
+                    }
                 } catch (e) { console.error("CartBot: Add Gift Error", e); }
             }
         }
@@ -752,9 +780,9 @@
         if (url && (url.includes('/cart/update') || url.includes('/cart/change') || url.includes('/cart/clear'))) {
             fetchPromise.then(async (response) => {
                 if (response.ok) {
-                    setTimeout(() => triggerSync(false), 100);
+                    setTimeout(() => triggerSync(false), 50);
                     if (!window._cartBotAddingGift && !window._cartBotValidating) {
-                        setTimeout(() => validateCartStateAsync(), 300);
+                        setTimeout(() => validateCartStateAsync(), 150);
                     }
                 }
             });
@@ -778,9 +806,9 @@
                 if (this.responseURL.includes('/cart/add') && !window._cartBotAddingGift) {
                     injectGiftAsync(addedIds);
                 } else if (this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear')) {
-                    setTimeout(() => triggerSync(false), 100);
+                    setTimeout(() => triggerSync(false), 50);
                     if (!window._cartBotAddingGift && !window._cartBotValidating) {
-                        setTimeout(() => validateCartStateAsync(), 300);
+                        setTimeout(() => validateCartStateAsync(), 150);
                     }
                 }
             }

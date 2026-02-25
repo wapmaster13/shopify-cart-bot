@@ -26,6 +26,9 @@ export async function syncGiftRules(admin: any, shop: string) {
             id: r.id,
             triggerType: r.triggerType,
             minCartValue: r.minCartValue,
+            minQuantity: r.minQuantity,
+            maxQuantity: r.maxQuantity,
+            countGlobalQuantity: r.countGlobalQuantity,
             // Trimitem array-uri direct, NU string-uri
             triggerProductIds: r.triggerProductIds ? JSON.parse(r.triggerProductIds) : [],
             giftVariantIds: r.giftVariantIds ? JSON.parse(r.giftVariantIds) : [],

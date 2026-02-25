@@ -17,8 +17,8 @@ export function loader() {
   console.log("CartBot: Brain Loaded 🧠 v7.1 (Client-Side Logic)");
 
   const CONFIG = {
-    debounceTime: 800, // Sync delay (wait for WASM)
-    bucketDelay: 500,  // Token bucket refill delay
+    debounceTime: 200, // Sync delay (wait for WASM)
+    bucketDelay: 200,  // Token bucket refill delay
     bucketSize: 10,
     sections: ['cart-drawer', 'cart-icon-bubble', 'main-cart-items', 'cart-notification-button'] 
   };
@@ -225,27 +225,49 @@ export function loader() {
       const cartProductIds = new Set(cart.items.map(i => i.product_id));
       const cartTotal = cart.total_price / 100; 
 
+      const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
+
       for (const rule of rules) {
           let eligible = false;
           
-          if (rule.triggerType === 'CART_VALUE' || rule.triggerType === 'COMBINED') {
-             if (cartTotal >= parseFloat(rule.minCartValue)) eligible = true;
-          }
-          
-          if (!eligible && (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED')) {
-              const triggerIds = rule.triggerProductIds || [];
-              const hasTrigger = triggerIds.some(tid => {
-                 return cartProductIds.has(Number(tid)) || cartVariantIds.has(Number(tid));
+          // Check Cart Value
+          const cartValuePassed = cartTotal >= parseFloat(rule.minCartValue || 0);
+
+          // Check Product Purchase & Quantities
+          const triggerIds = rule.triggerProductIds || [];
+          let matchingProductQty = 0;
+
+          const productPassed = triggerIds.some(tid => {
+              const numId = extractId(tid);
+              return cartProductIds.has(Number(numId)) || cartVariantIds.has(Number(numId));
+          });
+
+          cart.items.forEach(i => {
+              const isTrigger = triggerIds.some(tid => {
+                  const numId = extractId(tid);
+                  return i.product_id === numId || i.variant_id === numId || i.id === numId;
               });
-              if(hasTrigger) eligible = true;
-          }
+              if (!i.properties || !i.properties['_FreeGift']) {
+                  if (triggerIds.length === 0 || isTrigger) {
+                      matchingProductQty += i.quantity;
+                  }
+              }
+          });
+
+          const totalQty = rule.countGlobalQuantity ? cart.items.filter(i => !i.properties || !i.properties['_FreeGift']).reduce((acc, obj) => acc + obj.quantity, 0) : matchingProductQty;
+          const quantityPassed = totalQty >= parseInt(rule.minQuantity || 0) && totalQty <= parseInt(rule.maxQuantity || 999999);
+
+          if (rule.triggerType === 'CART_VALUE') eligible = cartValuePassed;
+          else if (rule.triggerType === 'PRODUCTS' || rule.triggerType === 'PRODUCT_PURCHASE') eligible = productPassed;
+          else if (rule.triggerType === 'QUANTITY') eligible = quantityPassed;
+          else if (rule.triggerType === 'COMBINED') eligible = cartValuePassed && productPassed && quantityPassed;
 
           if (eligible) {
               const giftId = rule.giftVariantIds?.[0]; // First gift
               if (giftId && !cartVariantIds.has(Number(giftId))) {
                   if(debug) console.log("CartBot: Adding Missing Gift", giftId);
                   try {
-                      await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                      const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -256,7 +278,11 @@ export function loader() {
                               }]
                           })
                       });
-                      changesMade = true;
+                      if (res.ok) {
+                          changesMade = true;
+                      } else {
+                          console.warn("CartBot: Failed to add gift. Might be out of stock.", await res.text());
+                      }
                   } catch(e) { console.error("CartBot: Add Gift Error", e); }
               }
           } 
@@ -336,7 +362,7 @@ export function loader() {
         fetchPromise.then(async (response) => {
             if (response.ok) {
                 // Wait slightly for Shopify to process, then sync
-                setTimeout(() => triggerSync(url.includes('/cart/add')), 100);
+                setTimeout(() => triggerSync(url.includes('/cart/add')), 50);
             }
         });
     }
@@ -347,7 +373,7 @@ export function loader() {
   XMLHttpRequest.prototype.send = function (body) {
     this.addEventListener('load', function () {
       if (this.responseURL && (this.responseURL.includes('/cart/add') || this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change'))) {
-         setTimeout(() => triggerSync(this.responseURL.includes('/cart/add')), 100);
+         setTimeout(() => triggerSync(this.responseURL.includes('/cart/add')), 50);
       }
     });
     originalSend.call(this, body);
