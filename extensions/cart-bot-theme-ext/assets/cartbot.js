@@ -46,121 +46,196 @@
     }
 
     // --- Helper: Universal Refresh Strategy ("Kitchen Sink") ---
-    async function refreshCartUI(data, forceOpen = false) {
-        console.log("🔴 CartBot: refreshCartUI called | forceOpen:", forceOpen);
+    async function universalCartRefresh(data = null, forceOpen = false) {
+        console.log("🔴 CartBot: universalCartRefresh called | forceOpen:", forceOpen);
         const debug = new URLSearchParams(window.location.search).has('cartbot_debug') || true;
-        if (debug) console.log("CartBot: 🚿 Executing Kitchen Sink Refresh...");
+
+        // --- 1. PREMIUM THEME SUPPORT (The Hydration Fix for Horizon, etc.) ---
+        let premiumRefreshSuccess = false;
+        try {
+            const cartEl = document.querySelector('[data-section-id]');
+            if (cartEl) {
+                const sectionId = cartEl.getAttribute('data-section-id');
+                const res = await fetch(window.Shopify.routes.root + '?sections=' + sectionId);
+                const sectionData = await res.json();
+
+                if (sectionData[sectionId]) {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = sectionData[sectionId];
+
+                    // 1. Identify the inner cart items container (NEVER the outer drawer wrapper)
+                    const validSelectors = 'cart-items-component, cart-items, cart-drawer-items, [data-ajax-cart-section]';
+                    // Find the active element, strictly ensuring it is NOT inside a <template>
+                    const oldCartItems = Array.from(document.querySelectorAll(validSelectors)).find(el => !el.closest('template'));
+
+                    if (oldCartItems) {
+                        // 2. PRECISION MATCHING: Find the exact same tagName in the new HTML, ignoring templates
+                        const tagName = oldCartItems.tagName.toLowerCase(); // e.g., 'cart-items-component'
+                        const newCartItems = Array.from(tempDiv.querySelectorAll(tagName)).find(el => !el.closest('template'));
+
+                        if (newCartItems && oldCartItems) {
+                            // Because we target the inner component, the outer <dialog open> is UNTOUCHED.
+                            // The drawer will NOT close!
+                            oldCartItems.innerHTML = newCartItems.innerHTML;
+
+                            // 3. Hydration Fix (Re-inject scripts)
+                            const scripts = oldCartItems.querySelectorAll('script');
+                            scripts.forEach(oldScript => {
+                                const newScript = document.createElement('script');
+                                Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+                                newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+                                oldScript.parentNode.replaceChild(newScript, oldScript);
+                            });
+
+                            // 4. Update Bubble Count
+                            const oldBubble = document.querySelector('cart-count, .cart-count-bubble, .cart-bubble__text-count');
+                            const newBubble = tempDiv.querySelector('cart-count, .cart-count-bubble, .cart-bubble__text-count');
+                            if (oldBubble && newBubble) oldBubble.innerHTML = newBubble.innerHTML;
+
+                            premiumRefreshSuccess = true;
+                            if (debug) console.log("CartBot: Hydration DOM swap successful with precision matching.");
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            if (debug) console.log("CartBot: Premium section fetch failed, falling back to standard events.", e);
+        }
+
+        // --- 2. DAWN & STANDARD THEME PRESERVATION (The Kitchen Sink) ---
+        // 1. Native Dawn / Shopify Standard Web Components
+        if (!premiumRefreshSuccess) {
+            // Self-healing fetch for Dawn if data wasn't provided
+            if (!data) {
+                try {
+                    const sectionsParam = CONFIG.sections.join(',');
+                    const res = await fetch(window.Shopify.routes.root + 'cart?sections=' + sectionsParam);
+                    data = await res.json();
+                } catch (e) { }
+            }
+
+            if (data) {
+                try {
+                    const cartDrawer = document.querySelector('cart-drawer');
+                    if (cartDrawer && typeof cartDrawer.renderContents === 'function') {
+                        cartDrawer.renderContents({ sections: data });
+                    }
+                } catch (e) { if (debug) console.error(e); }
+
+                try {
+                    const cartNotification = document.querySelector('cart-notification');
+                    if (cartNotification && typeof cartNotification.renderContents === 'function') {
+                        cartNotification.renderContents({ sections: data });
+                    }
+                } catch (e) { if (debug) console.error(e); }
+            }
+        }
 
         try {
-            // 1. Native Dawn / Shopify Standard Web Components
-            const cartDrawer = document.querySelector('cart-drawer');
-            if (cartDrawer && typeof cartDrawer.renderContents === 'function') {
-                if (debug) console.log("CartBot: [Native] cart-drawer.renderContents");
-                cartDrawer.renderContents({ sections: data });
+            const loessCartItems = document.querySelector('loess-cart-items');
+            if (loessCartItems && typeof loessCartItems.update === 'function') {
+                loessCartItems.update();
             }
+        } catch (e) { if (debug) console.error(e); }
 
-            const cartNotification = document.querySelector('cart-notification');
-            if (cartNotification && typeof cartNotification.renderContents === 'function') {
-                cartNotification.renderContents({ sections: data });
+        try {
+            const cartDrawerItems = document.querySelector('cart-drawer-items');
+            if (cartDrawerItems && typeof cartDrawerItems.onCartUpdate === 'function') {
+                cartDrawerItems.onCartUpdate();
             }
+        } catch (e) { if (debug) console.error(e); }
 
-            // 2. Global Theme Objects (Legacy & Modern)
-            if (window.SLIDECART_UPDATE) { if (debug) console.log("CartBot: [Global] SLIDECART_UPDATE"); window.SLIDECART_UPDATE(); }
-            if (window.theme?.ajaxCart?.update) { if (debug) console.log("CartBot: [Global] theme.ajaxCart.update"); window.theme.ajaxCart.update(); }
-            if (window.theme?.Cart?.updateCart) { window.theme.Cart.updateCart(); }
-            if (window.theme?.MiniCart?.update) { window.theme.MiniCart.update(); }
-            if (window.theme?.miniCart?.updateElements) { window.theme.miniCart.updateElements(); }
-            if (window.theme?.updateCartSummaries) { window.theme.updateCartSummaries(); }
-            if (window.ajaxCart?.load) { window.ajaxCart.load(); }
-            if (window.CartJS?.getCart) { window.CartJS.getCart(); }
-            if (window.cart?.getCart) { window.cart.getCart(); }
-            if (window.refreshCart) { window.refreshCart(); }
-            if (window.upcartRefreshCart) { window.upcartRefreshCart(); }
-            if (window.updateCartDrawer) { window.updateCartDrawer(); }
+        // 2. Global Theme Objects (Legacy & Modern)
+        try { if (window.theme && typeof window.theme.ajaxCart?.update === 'function') window.theme.ajaxCart.update(); } catch (e) { }
+        try { if (window.theme && typeof window.theme.Cart?.updateCart === 'function') window.theme.Cart.updateCart(); } catch (e) { }
+        try { if (window.CartJS && typeof window.CartJS.getCart === 'function') window.CartJS.getCart(); } catch (e) { }
+        try { if (window.cart && typeof window.cart.getCart === 'function') window.cart.getCart(); } catch (e) { }
+        try { if (window.ajaxCart && typeof window.ajaxCart.load === 'function') window.ajaxCart.load(); } catch (e) { }
+        try { if (window.theme && typeof window.theme.MiniCart?.update === 'function') window.theme.MiniCart.update(); } catch (e) { }
+        try { if (typeof window.SLIDECART_UPDATE === 'function') window.SLIDECART_UPDATE(); } catch (e) { }
+        try { if (window.liquidAjaxCart && typeof window.liquidAjaxCart.update === 'function') window.liquidAjaxCart.update(); } catch (e) { }
+        try { if (typeof window.refreshCart === 'function') window.refreshCart(); } catch (e) { }
+        try { if (typeof window.upcartRefreshCart === 'function') window.upcartRefreshCart(); } catch (e) { }
+        try { if (window.Alpine) { window.Alpine.store('main').fetchCart(); window.Alpine.store('xMiniCart').reLoad(); } } catch (e) { }
+        try { if (window.theme && typeof window.theme.updateCartSummaries === 'function') window.theme.updateCartSummaries(); } catch (e) { }
+        try { if (window.Rebuy && window.Rebuy.Cart && typeof window.Rebuy.Cart.fetchShopifyCart === 'function') window.Rebuy.Cart.fetchShopifyCart(); } catch (e) { }
+        try { if (window.HsCartDrawer && typeof window.HsCartDrawer.updateSlideCart === 'function') window.HsCartDrawer.updateSlideCart(); } catch (e) { }
 
-            // 3. Third-Party Apps
-            if (window.liquidAjaxCart?.update) { window.liquidAjaxCart.update(); }
-            if (window.liquidAjaxCart?.cartRequestUpdate) { window.liquidAjaxCart.cartRequestUpdate(); }
-            if (forceOpen && window.SLIDECART_OPEN) { setTimeout(() => window.SLIDECART_OPEN(), 500); }
-            if (window.Rebuy?.Cart?.fetchShopifyCart) { window.Rebuy.Cart.fetchShopifyCart(); }
-            if (window.HsCartDrawer?.updateSlideCart) { window.HsCartDrawer.updateSlideCart(); }
+        // 3. Specific Dispatch Events
+        const detailObj = { open: forceOpen, cart: data };
+        try { document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true, detail: detailObj })); } catch (e) { }
+        try { document.documentElement.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true, detail: detailObj })); } catch (e) { }
+        try { document.dispatchEvent(new CustomEvent('cart:build', { bubbles: true, detail: detailObj })); } catch (e) { }
+        try { document.dispatchEvent(new CustomEvent('cart:updated', { bubbles: true, detail: detailObj })); } catch (e) { }
+        try { window.dispatchEvent(new Event('cart:updated')); } catch (e) { }
+        try { document.dispatchEvent(new Event('theme:cartchanged')); } catch (e) { }
+        try { window.dispatchEvent(new Event('update_cart')); } catch (e) { }
+        try { document.dispatchEvent(new CustomEvent('theme:cart:reload', { bubbles: true, detail: detailObj })); } catch (e) { }
+        try { document.dispatchEvent(new CustomEvent('dispatch:cart-drawer:refresh', { bubbles: true, detail: detailObj })); } catch (e) { }
+        try { document.body.dispatchEvent(new CustomEvent('shapes:modalcart:afteradditem', { bubbles: true, detail: detailObj })); } catch (e) { }
+        try { document.dispatchEvent(new CustomEvent('obsidian:upsell:refresh', { bubbles: true, detail: detailObj })); } catch (e) { }
 
-            // 4. Frameworks (Alpine.js)
-            if (window.Alpine) {
-                if (debug) console.log("CartBot: [Framework] Alpine.js detected");
-                try { window.Alpine.store("main").fetchCart(); } catch (e) { }
-                try { window.Alpine.store("xMiniCart").reLoad(); } catch (e) { }
-            }
-
-            // 5. DOM Events (The "Spray and Pray")
-            const eventNames = [
-                'cart:refresh',
-                'cart:update',
-                'cart:updated',
-                'cart:build',
-                'theme:cart:reload',
-                'theme:cartchanged',
-                'update_cart',
-                'obsidian:upsell:refresh',
-                'shapes:modalcart:afteradditem'
-            ];
-
-            eventNames.forEach(evt => {
-                document.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: forceOpen, cart: data } }));
-                document.documentElement.dispatchEvent(new CustomEvent(evt, { bubbles: true, detail: { open: forceOpen, cart: data } }));
-            });
-
+        try {
             if (window.pubsub) {
-                // We need full cart object for pubsub usually
-                const cartRes = await fetch(window.Shopify.routes.root + 'cart.js');
-                const cart = await cartRes.json();
-                window.pubsub.publish('cart-update', { cart });
-                if (debug) console.log("CartBot: [PubSub] Published cart-update");
+                fetch(window.Shopify.routes.root + 'cart.js').then(res => res.json()).then(cart => {
+                    window.pubsub.publish('cart-update', { cart });
+                });
             }
+        } catch (e) { }
 
-            // 6. Custom Elements (Dawn/theme-specific)
-            const customCartElements = document.querySelectorAll('cart-items, cart-drawer-items, cart-note');
-            customCartElements.forEach(el => {
-                if (typeof el.onCartUpdate === 'function') {
-                    if (debug) console.log("CartBot: [CustomElement] Calling onCartUpdate() on", el.tagName);
-                    el.onCartUpdate();
-                }
-            });
-
-            // 7. Manual DOM Fallback (Our surgical swap)
-            Object.keys(data).forEach(sectionId => {
-                const html = data[sectionId];
-                if (!html) return;
-
-                const selectors = [
-                    '#' + sectionId,
-                    '.' + sectionId,
-                    '[id^="' + sectionId + '"]',
-                    '.drawer__contents',
-                    '.cart-drawer__items'
-                ];
-
-                let target = null;
-                let matchedSelector = null;
-                for (const s of selectors) {
-                    if ((s.includes('drawer') || s.includes('items')) && sectionId !== 'cart-drawer' && sectionId !== 'main-cart-items') continue;
-                    target = document.querySelector(s);
-                    if (target) { matchedSelector = s; break; }
-                }
-
-                if (target) {
-                    if (debug) console.log("CartBot: [DOM] Swapping", matchedSelector);
-                    const div = document.createElement('div');
-                    div.innerHTML = html;
-                    let newEl = div.querySelector(matchedSelector) || div.querySelector('#' + sectionId) || div.firstElementChild;
-                    if (newEl) target.innerHTML = newEl.innerHTML;
-                    else target.innerHTML = html;
-                }
-            });
-
-        } catch (e) {
-            console.error("CartBot: Refresh error", e);
+        // 4. Custom Elements (Fallback for Dawn/theme-specific)
+        if (!premiumRefreshSuccess) {
+            try {
+                const customCartElements = document.querySelectorAll('cart-items, cart-drawer-items, cart-note');
+                customCartElements.forEach(el => {
+                    if (typeof el.onCartUpdate === 'function') el.onCartUpdate();
+                });
+            } catch (e) { }
         }
+
+        // 5. Manual DOM Swap Fallback (Last resort UI painting)
+        if (data && !premiumRefreshSuccess) {
+            Object.keys(data).forEach(sectionId => {
+                try {
+                    const html = data[sectionId];
+                    if (!html) return;
+                    const selectors = ['#' + sectionId, '.' + sectionId, '[id^="' + sectionId + '"]', '.drawer__contents', '.cart-drawer__items'];
+                    let target = null;
+                    let matchedSelector = null;
+                    for (const s of selectors) {
+                        if ((s.includes('drawer') || s.includes('items')) && sectionId !== 'cart-drawer' && sectionId !== 'main-cart-items') continue;
+                        target = document.querySelector(s);
+                        if (target) { matchedSelector = s; break; }
+                    }
+                    if (target) {
+                        const div = document.createElement('div');
+                        div.innerHTML = html;
+                        let newEl = div.querySelector(matchedSelector) || div.querySelector('#' + sectionId) || div.firstElementChild;
+                        if (newEl) target.innerHTML = newEl.innerHTML;
+                        else target.innerHTML = html;
+                    }
+                } catch (e) { }
+            });
+        }
+
+        // --- 3. THE SAFETY NET ---
+        setTimeout(async () => {
+            try {
+                const finalCartRes = await fetch(window.Shopify.routes.root + 'cart.js');
+                const finalCart = await finalCartRes.json();
+
+                const hasGiftData = finalCart.items.some(item => item.properties && item.properties['_FreeGift']);
+                if (hasGiftData) {
+                    const giftItem = finalCart.items.find(item => item.properties && item.properties['_FreeGift']);
+                    const bodyText = document.body.innerText || "";
+                    if (!bodyText.includes(giftItem.product_title)) {
+                        console.warn("CartBot: Safety net triggered! Missing gift in UI. Attempting another refresh cycle instead of reloading...");
+                        // Try one more AJAX refresh instead of a hard reload
+                        universalCartRefresh(null, true);
+                    }
+                }
+            } catch (err) { }
+        }, 2000);
     }
 
 
@@ -353,6 +428,7 @@
                     body: JSON.stringify({ updates: itemsToRemoveKeys })
                 });
                 changesMade = true;
+                universalCartRefresh(null, false);
             } catch (e) { console.error("CartBot: Remove Gift Error", e); }
         }
 
@@ -369,6 +445,7 @@
                             body: JSON.stringify({ items: addItems })
                         });
                         if (res.ok) {
+                            universalCartRefresh(null, true);
                             triggerSync(true);
                         } else {
                             console.warn("CartBot: Failed to add gift via consent popup", await res.text());
@@ -392,6 +469,7 @@
                     });
                     if (res.ok) {
                         changesMade = true;
+                        universalCartRefresh(null, true);
                     } else {
                         console.warn("CartBot: Failed to add gift. Might be out of stock.", await res.text());
                     }
@@ -436,7 +514,7 @@
             // or if an interceptor explicitly requested it (forceOpen === true).
             // This prevents the cart drawer from popping open on every page load.
             if (force || forceOpen) {
-                await refreshCartUI(uiRes, forceOpen);
+                await universalCartRefresh(uiRes, forceOpen);
             }
 
             // --- GIFT DETECTION (Toast) ---
@@ -464,71 +542,57 @@
 
     // --- 5. Aggressive Interceptors (Post-Add) ---
 
-    window._cartBotAddingGift = false;
+    window._cartBotProcessing = false;
 
-    async function injectGiftAsync(addedIds) {
-        if (window._cartBotAddingGift) return;
+    async function evaluateCartStateAsync(isAdd = false, addedIds = []) {
+        if (window._cartBotProcessing) return;
+        window._cartBotProcessing = true;
 
-        const rules = window.CartBotRules || [];
-        if (rules.length === 0) return;
-
-        const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
-
-        window._cartBotAddingGift = true;
         try {
-            // 1. Fetch Latest Cart State
+            const rules = window.CartBotRules || [];
+            if (rules.length === 0) return;
+
             const cartRes = await fetch(window.Shopify.routes.root + 'cart.js');
             const cart = await cartRes.json();
-            const cartTotal = cart.total_price / 100;
 
+            const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
+            const cartTotal = cart.total_price / 100;
             const targetGifts = new Set();
-            const allowedGifts = new Set();
             let requiresConsent = false;
-            let giftVariantIdsToAdd = [];
             let consentRule = null;
 
-            console.log("CartBot: injectGiftAsync evaluating rules...", rules);
-
-            // 2. Evaluate Rules Dynamically
+            // 1. Evaluate Rules
             for (const rule of rules) {
                 let eligible = false;
-
-                // Matching Logic
-                // Check Cart Value
                 const cartValuePassed = cartTotal >= parseFloat(rule.minCartValue || 0);
-
-                // Check Product Purchase
                 const triggerIds = rule.triggerProductIds || [];
+                let matchingProductQty = 0;
+
                 const productPassed = triggerIds.some(tid => {
                     const numId = extractId(tid);
                     return cart.items.some(i => i.product_id === numId || i.variant_id === numId || i.id === numId);
                 });
 
-                if (rule.triggerType === 'CART_VALUE') eligible = cartValuePassed;
-                else if (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'PRODUCTS') eligible = productPassed;
-                else if (rule.triggerType === 'COMBINED') eligible = cartValuePassed && productPassed;
-                else if (rule.triggerType === 'QUANTITY') {
-                    if (rule.countGlobalQuantity) {
-                        let totalQualifyingQty = 0;
-                        cart.items.forEach(item => {
-                            const isGift = item.properties && item.properties['_FreeGift'];
-                            if (!isGift) {
-                                totalQualifyingQty += item.quantity;
-                            }
-                        });
-                        eligible = totalQualifyingQty >= (rule.minQuantity || 0) && totalQualifyingQty <= (rule.maxQuantity || 999999);
-                    } else {
-                        eligible = cart.items.some(item => {
-                            const isGift = item.properties && item.properties['_FreeGift'];
-                            if (!isGift) {
-                                return item.quantity >= (rule.minQuantity || 0) && item.quantity <= (rule.maxQuantity || 999999);
-                            }
-                            return false;
-                        });
+                cart.items.forEach(i => {
+                    const isTrigger = triggerIds.some(tid => {
+                        const numId = extractId(tid);
+                        return i.product_id === numId || i.variant_id === numId || i.id === numId;
+                    });
+                    if (!i.properties || !i.properties['_FreeGift']) {
+                        if (triggerIds.length === 0 || isTrigger) {
+                            matchingProductQty += i.quantity;
+                        }
                     }
-                } else {
-                    eligible = true;
-                }
+                });
+
+                const totalQty = rule.countGlobalQuantity ? cart.items.filter(i => !i.properties || !i.properties['_FreeGift']).reduce((acc, obj) => acc + obj.quantity, 0) : matchingProductQty;
+                const quantityPassed = totalQty >= parseInt(rule.minQuantity || 0) && totalQty <= parseInt(rule.maxQuantity || 999999);
+
+                if (rule.triggerType === 'CART_VALUE') eligible = cartValuePassed;
+                else if (rule.triggerType === 'PRODUCTS' || rule.triggerType === 'PRODUCT_PURCHASE') eligible = productPassed;
+                else if (rule.triggerType === 'QUANTITY') eligible = quantityPassed;
+                else if (rule.triggerType === 'COMBINED') eligible = cartValuePassed && productPassed && quantityPassed;
+                else eligible = true; // Fallback for simple "Always active"
 
                 if (eligible) {
                     const rawGifts = rule.giftVariantIds || (rule.giftVariants ? rule.giftVariants.map(v => v.id) : []);
@@ -536,197 +600,115 @@
                         if (!rawG) continue;
                         const potentialGiftId = extractId(rawG);
 
-                        // Check for Existing Gift
-                        const alreadyHasGift = cart.items.some(item => (item.variant_id === potentialGiftId || item.id === potentialGiftId) && item.properties && item.properties['_FreeGift']);
-
                         // Check if user manually added it
                         const manuallyAdded = cart.items.some(item => (item.variant_id === potentialGiftId || item.id === potentialGiftId) && (!item.properties || !item.properties['_FreeGift']));
-
-                        if (alreadyHasGift) {
-                            continue;
-                        }
 
                         if (manuallyAdded && !rule.applyIfAlreadyInCart) {
                             console.log(`CartBot: Skipping gift injection of ${potentialGiftId} because user already added it manually and applyIfAlreadyInCart is disabled.`);
                             continue;
                         }
 
-                        if (!giftVariantIdsToAdd.includes(potentialGiftId)) {
-                            giftVariantIdsToAdd.push(potentialGiftId);
-                        }
+                        targetGifts.add(potentialGiftId);
                     }
-
                     if (rule.requireConsent) {
                         requiresConsent = true;
                         if (!consentRule) consentRule = rule;
                     }
-                    break;
                 }
             }
 
-            // 5. Execute Secondary Request
-            if (giftVariantIdsToAdd.length > 0) {
-                console.log("CartBot: Intercepted theme add! Sending secondary request for gifts...", giftVariantIdsToAdd);
+            const itemsToAdd = [];
+            const itemsToRemoveKeys = {};
 
-                let anySuccess = false;
+            // 2. Find which items to remove
+            cart.items.forEach(item => {
+                const isGift = item.properties && item.properties['_FreeGift'];
+                const itemVid = item.variant_id || item.id;
 
-                if (requiresConsent) {
-                    console.log("CartBot: Consent is required. Trying to pop up.");
-                    showConsentPopup(consentRule, "Would you like to add an eligible free gift to your order?", async () => {
-                        for (const potentialGiftId of giftVariantIdsToAdd) {
-                            try {
-                                const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
-                                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                                    body: JSON.stringify({ items: [{ id: potentialGiftId, quantity: 1, properties: { '_FreeGift': 'true' } }] })
-                                });
-                                if (res.ok) anySuccess = true;
-                            } catch (err) { }
-                        }
-                        if (anySuccess) setTimeout(() => triggerSync(true), 100);
-                    });
-                } else {
-                    console.log(`CartBot: Adding gifts silently because Consent is not required.`);
-                    for (const potentialGiftId of giftVariantIdsToAdd) {
-                        try {
-                            const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                                body: JSON.stringify({
-                                    items: [{
-                                        id: potentialGiftId,
-                                        quantity: 1,
-                                        properties: { '_FreeGift': 'true' }
-                                    }]
-                                })
-                            });
-
-                            if (res.ok) {
-                                anySuccess = true;
-                                console.log(`CartBot: Successfully added gift: ${potentialGiftId}`);
-                            } else {
-                                console.warn(`CartBot: Failed to add gift ${potentialGiftId}. It might be out of stock or rejected by Shopify.`, await res.text());
-                            }
-                        } catch (err) {
-                            console.error(`CartBot: Network error adding gift ${potentialGiftId}`, err);
-                        }
-                    }
-
-                    if (anySuccess) {
-                        setTimeout(() => triggerSync(true), 100);
-                    }
+                if (isGift && !targetGifts.has(itemVid)) {
+                    itemsToRemoveKeys[item.key] = 0; // Set quantity to 0 to remove
                 }
-            }
-        } catch (e) {
-            console.error("CartBot: Failed to process async gift injection", e);
-        } finally {
-            setTimeout(() => { window._cartBotAddingGift = false; }, 1000);
-        }
-    }
+            });
 
-    window._cartBotValidating = false;
+            // 3. Find which items to add
+            targetGifts.forEach(giftVid => {
+                const isInCart = cart.items.some(i => (i.variant_id || i.id) === giftVid && i.properties && i.properties['_FreeGift']);
+                if (!isInCart) {
+                    itemsToAdd.push(giftVid);
+                }
+            });
 
-    async function validateCartStateAsync() {
-        if (window._cartBotValidating) return;
-        window._cartBotValidating = true;
-        try {
-            const cartRes = await fetch(window.Shopify.routes.root + 'cart.js');
-            const cart = await cartRes.json();
-
+            // Check if cart is only gifts now
             const regularItems = cart.items.filter(item => !item.properties || !item.properties['_FreeGift']);
             const giftItems = cart.items.filter(item => item.properties && item.properties['_FreeGift']);
 
-            if (giftItems.length === 0) return;
-
-            // Scenario A: No regular items left, but gifts remain
-            if (regularItems.length === 0 && giftItems.length > 0) {
+            if (regularItems.length === 0 && giftItems.length > 0 && !isAdd) {
                 console.log("CartBot: Only gifts left. Clearing cart...");
                 const res = await fetch(window.Shopify.routes.root + 'cart/clear.js', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
                 });
                 if (res.ok) {
-                    window._cartBotValidating = false;
-                    window.location.reload();
+                    universalCartRefresh(null, false);
                     return;
                 }
             }
 
-            // Scenario B: Standard Validation
-            if (regularItems.length > 0 && giftItems.length > 0) {
-                const cartTotalWithoutGifts = regularItems.reduce((total, item) => total + item.final_line_price, 0) / 100;
-                const rules = window.CartBotRules || [];
-                const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
+            let anySuccess = false;
 
-                let giftsToRemove = [];
+            if (Object.keys(itemsToRemoveKeys).length > 0) {
+                console.log("CartBot: Removing Ineligible Gifts", itemsToRemoveKeys);
+                try {
+                    const res = await fetch(window.Shopify.routes.root + 'cart/update.js', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ updates: itemsToRemoveKeys })
+                    });
+                    if (res.ok) anySuccess = true;
+                } catch (e) { console.error("CartBot: Remove Gift Error", e); }
+            }
 
-                for (const giftItem of giftItems) {
-                    let isValid = false;
-
-                    for (const rule of rules) {
-                        const rawGifts = rule.giftVariantIds || (rule.giftVariants ? rule.giftVariants.map(v => v.id) : []);
-                        const ruleGiftIds = rawGifts.map(extractId);
-
-                        if (!ruleGiftIds.includes(giftItem.variant_id) && !ruleGiftIds.includes(giftItem.id)) continue;
-
-                        let isMatch = false;
-                        if (rule.triggerType === 'CART_VALUE') {
-                            isMatch = cartTotalWithoutGifts >= parseFloat(rule.minCartValue || 0);
-                        }
-                        else if (rule.triggerType === 'QUANTITY') {
-                            if (rule.countGlobalQuantity) {
-                                let totalQualifyingQty = 0;
-                                regularItems.forEach(item => {
-                                    totalQualifyingQty += item.quantity;
+            if (itemsToAdd.length > 0) {
+                if (requiresConsent) {
+                    // Create a promise to wait for consent popup
+                    await new Promise((resolve) => {
+                        showConsentPopup(consentRule, "Would you like to add an eligible free gift to your order?", async () => {
+                            try {
+                                const addItems = itemsToAdd.map(id => ({ id: id, quantity: 1, properties: { '_FreeGift': 'true' } }));
+                                const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                                    body: JSON.stringify({ items: addItems })
                                 });
-                                isMatch = totalQualifyingQty >= (rule.minQuantity || 0) && totalQualifyingQty <= (rule.maxQuantity || 999999);
-                            } else {
-                                isMatch = regularItems.some(item => item.quantity >= (rule.minQuantity || 0) && item.quantity <= (rule.maxQuantity || 999999));
-                            }
-                        }
-                        else if (rule.triggerType === 'PRODUCT_PURCHASE' || rule.triggerType === 'COMBINED') {
-                            const triggerIds = (rule.triggerProductIds || []).map(extractId);
-                            const cartMatch = triggerIds.some(tid => cart.items.some(i => (i.product_id === tid || i.variant_id === tid || i.id === tid) && (!i.properties || !i.properties['_FreeGift'])));
-
-                            if (rule.triggerType === 'COMBINED') {
-                                isMatch = cartMatch && (cartTotalWithoutGifts >= parseFloat(rule.minCartValue || 0));
-                            } else {
-                                isMatch = cartMatch;
-                            }
-                        } else {
-                            isMatch = true;
-                        }
-
-                        if (isMatch) {
-                            isValid = true;
-                            break;
-                        }
-                    }
-
-                    if (!isValid) {
-                        giftsToRemove.push(giftItem.key);
-                    }
-                }
-
-                if (giftsToRemove.length > 0) {
-                    console.log("CartBot: Rules no longer met! Removing unqualified gifts...", giftsToRemove);
-
-                    for (let key of giftsToRemove) {
-                        const res = await fetch(window.Shopify.routes.root + 'cart/change.js', {
+                                if (res.ok) anySuccess = true;
+                            } catch (e) { console.error("CartBot: Add Gift Error", e); }
+                            resolve();
+                        }, () => {
+                            console.log("CartBot: User declined consent.");
+                            resolve();
+                        });
+                    });
+                } else {
+                    console.log(`CartBot: Adding Missing Gifts silently`, itemsToAdd);
+                    try {
+                        const addItems = itemsToAdd.map(id => ({ id: id, quantity: 1, properties: { '_FreeGift': 'true' } }));
+                        const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                            body: JSON.stringify({ id: key, quantity: 0 })
+                            body: JSON.stringify({ items: addItems })
                         });
-                        if (res.ok) {
-                            console.log("CartBot: Successfully removed unqualified gift.");
-                            setTimeout(() => triggerSync(true), 150);
-                        }
-                    }
+                        if (res.ok) anySuccess = true;
+                    } catch (e) { console.error("CartBot: Add Gift Error", e); }
                 }
             }
+
+            if (anySuccess) {
+                universalCartRefresh(null, true);
+            }
+
         } catch (e) {
-            console.error("CartBot: Failed to validate cart state", e);
+            console.error("CartBot: Failed to evaluate cart state", e);
         } finally {
-            setTimeout(() => { window._cartBotValidating = false; }, 1000);
+            setTimeout(() => { window._cartBotProcessing = false; }, 100);
         }
     }
 
@@ -763,11 +745,11 @@
         let init = args[1];
         let addedIds = (isCartAdd && init && init.body) ? extractIdsFromPayload(init.body) : [];
 
-        if (isCartAdd && !window._cartBotAddingGift) {
+        if (isCartAdd && !window._cartBotProcessing) {
             try {
                 const response = await originalFetch.apply(this, args);
                 if (response.ok) {
-                    await injectGiftAsync(addedIds);
+                    await evaluateCartStateAsync(true, addedIds);
                 }
                 return response;
             } catch (e) {
@@ -778,13 +760,13 @@
         const fetchPromise = originalFetch.apply(this, args);
 
         if (url && (url.includes('/cart/update') || url.includes('/cart/change') || url.includes('/cart/clear'))) {
-            fetchPromise.then(async (response) => {
+            return fetchPromise.then(async (response) => {
                 if (response.ok) {
-                    setTimeout(() => triggerSync(false), 50);
-                    if (!window._cartBotAddingGift && !window._cartBotValidating) {
-                        setTimeout(() => validateCartStateAsync(), 150);
+                    if (!window._cartBotProcessing) {
+                        await evaluateCartStateAsync(false, []);
                     }
                 }
+                return response;
             });
         }
         return fetchPromise;
@@ -801,14 +783,13 @@
         let isCartAdd = this._cartbotUrl && this._cartbotUrl.includes('/cart/add');
         let addedIds = isCartAdd ? extractIdsFromPayload(body) : [];
 
-        this.addEventListener('load', function () {
+        this.addEventListener('load', async function () {
             if (this.responseURL && this.status >= 200 && this.status < 300) {
-                if (this.responseURL.includes('/cart/add') && !window._cartBotAddingGift) {
-                    injectGiftAsync(addedIds);
-                } else if (this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear')) {
-                    setTimeout(() => triggerSync(false), 50);
-                    if (!window._cartBotAddingGift && !window._cartBotValidating) {
-                        setTimeout(() => validateCartStateAsync(), 150);
+                if (this.responseURL.includes('/cart/add') && !window._cartBotProcessing) {
+                    await evaluateCartStateAsync(true, addedIds);
+                } else if ((this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear'))) {
+                    if (!window._cartBotProcessing) {
+                        await evaluateCartStateAsync(false, []);
                     }
                 }
             }
