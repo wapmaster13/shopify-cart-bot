@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
     Page,
     Layout,
@@ -9,7 +9,8 @@ import {
     InlineStack,
     Banner,
     Popover,
-    ActionList
+    ActionList,
+    Card
 } from "@shopify/polaris";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,6 +27,7 @@ import {
     Crown,
     ChevronDown,
     ChevronUp,
+    Lightbulb
 } from "lucide-react";
 import { useSubmit, useNavigate } from "@remix-run/react";
 
@@ -147,40 +149,73 @@ const AnimatedHeader = ({ activeRoutes, isAppEmbedActive, onNewRule }: { activeR
     );
 };
 
-const FeatureCard = () => {
+const MARKETING_TIPS = [
+    "Did you know? Offering a tangible free gift can increase your checkout conversion rate by up to 50% more than a standard percentage discount.",
+    "Boost your Average Order Value! Set your 'Cart Value' trigger 15-20% higher than your current average order size.",
+    "Clear out old inventory smartly. Use slow-moving products as free gifts to free up warehouse space.",
+    "Reduce cart abandonment! A surprise free gift is a proven psychological trigger that pushes hesitant shoppers to buy.",
+    "Launching a new collection? Set up a rule to give away mini-samples or accessories of your new line for free. It’s the fastest way to get a new product into the hands of hundreds of buyers.",
+    "Surprise gifts create 'delight' moments. Customers are far more likely to post unboxing videos on TikTok or Instagram when they find an unexpected freebie in their package.",
+    "Create urgency! Use the 'Schedule BOT' feature (PRO plan) to run weekend-only flash campaigns.",
+    "Don't just give gifts to everyone. Attach a free gift ONLY to your highest-margin products. Customers will naturally gravitate towards your most profitable items.",
+    "Why stop at one gift? Upgrade to PRO plan and create two bots and offer a small gift at $50 and a premium gift at $100. Watch your customers race to hit that second milestone!"
+];
+
+const ProTipsCard = () => {
+    const [currentTipIndex, setCurrentTipIndex] = useState(0);
+    const [isMounted, setIsMounted] = useState(false);
+    const [isAnimating, setIsAnimating] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+        setCurrentTipIndex(Math.floor(Math.random() * MARKETING_TIPS.length));
+    }, []);
+
+    const nextTip = () => {
+        if (isAnimating) return;
+        setIsAnimating(true);
+        setTimeout(() => {
+            let newIndex;
+            do {
+                newIndex = Math.floor(Math.random() * MARKETING_TIPS.length);
+            } while (newIndex === currentTipIndex && MARKETING_TIPS.length > 1);
+            setCurrentTipIndex(newIndex);
+            setIsAnimating(false);
+        }, 300);
+    };
+
     return (
-        <motion.div
-            style={{
-                ...glassStyle,
-                padding: "24px",
-                background: "linear-gradient(135deg, rgba(255,255,255,0.8), rgba(240,249,255,0.6))"
-            }}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
-        >
+        <Card background="bg-surface-secondary">
             <BlockStack gap="400">
                 <InlineStack align="space-between">
-                    <div style={{ padding: 10, background: "rgba(99, 102, 241, 0.1)", borderRadius: 12 }}>
-                        <Zap size={24} color="#6366f1" />
-                    </div>
-                    <PolarisBadge tone="info">New</PolarisBadge>
+                    <InlineStack gap="200" align="center" blockAlign="center">
+                        <Lightbulb size={24} color="#f59e0b" />
+                        <Text as="h3" variant="headingMd">💡 Expert Tip</Text>
+                    </InlineStack>
+                    <PolarisBadge tone="warning">Pro Tip</PolarisBadge>
                 </InlineStack>
-                <BlockStack gap="200">
-                    <Text as="h3" variant="headingMd">Smart Triggers</Text>
-                    <Text as="p" tone="subdued">Boost conversion by 15% with AI-predicted thresholds.</Text>
+                <BlockStack gap="200" align="start">
+                    <div style={{ minHeight: "80px", display: "flex", alignItems: "center", width: "100%" }}>
+                        <div style={{
+                            transition: "all 0.3s ease-in-out",
+                            opacity: isAnimating ? 0 : 1,
+                            transform: isAnimating ? "translateY(10px)" : "translateY(0)",
+                            width: "100%"
+                        }}>
+                            <Text as="p" variant="bodyLg" tone="subdued">
+                                {isMounted ? MARKETING_TIPS[currentTipIndex] : "Loading tip..."}
+                            </Text>
+                        </div>
+                    </div>
                 </BlockStack>
-                <div style={{ height: 6, width: "100%", background: "#e2e8f0", borderRadius: 4, overflow: 'hidden' }}>
-                    <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: "70%" }}
-                        transition={{ duration: 1.5, delay: 0.5 }}
-                        style={{ height: "100%", background: "#6366f1", borderRadius: 4 }}
-                    />
+
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "12px" }}>
+                    <PolarisButton variant="plain" onClick={nextTip}>
+                        Next Tip ➔
+                    </PolarisButton>
                 </div>
-                <Text as="span" variant="bodySm" tone="subdued">70% Setup Complete</Text>
             </BlockStack>
-        </motion.div>
+        </Card>
     )
 }
 
@@ -525,7 +560,7 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
                         <Layout>
                             <Layout.Section>
                                 <div style={{ display: "grid", gridTemplateColumns: "60% 40%", gap: "20px", marginBottom: "40px" }}>
-                                    <FeatureCard />
+                                    <ProTipsCard />
                                     <PlanCard plan={currentPlan} activeBotsCount={rules.filter(r => r.isActive).length} />
                                 </div>
                             </Layout.Section>
