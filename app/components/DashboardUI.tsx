@@ -323,12 +323,12 @@ const BotCard = ({ rule, formatCurrency, onDelete, onEdit }: { rule: GiftRule, f
                 {/* Status Pill */}
                 <div style={{
                     padding: "6px 12px", borderRadius: 20,
-                    background: rule.status === "EXPIRED" ? "rgba(239, 68, 68, 0.1)" : rule.isActive ? "rgba(34, 197, 94, 0.1)" : "rgba(241, 245, 249, 1)",
-                    color: rule.status === "EXPIRED" ? "#b91c1c" : rule.isActive ? "#15803d" : "#64748b",
+                    background: rule.status === "EXPIRED" ? "rgba(239, 68, 68, 0.1)" : rule.status === "OUT_OF_STOCK" ? "rgba(249, 115, 22, 0.1)" : rule.isActive ? "rgba(34, 197, 94, 0.1)" : "rgba(241, 245, 249, 1)",
+                    color: rule.status === "EXPIRED" ? "#b91c1c" : rule.status === "OUT_OF_STOCK" ? "#c2410c" : rule.isActive ? "#15803d" : "#64748b",
                     fontSize: "0.85rem", fontWeight: 600, display: "flex", alignItems: "center", gap: 6
                 }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-                    {rule.status === "EXPIRED" ? "Expired" : rule.isActive ? "Active" : "Inactive"}
+                    {rule.status === "EXPIRED" ? "Expired" : rule.status === "OUT_OF_STOCK" ? "Out of Stock" : rule.isActive ? "Active" : "Inactive"}
                 </div>
 
                 {/* Actions */}
@@ -515,7 +515,7 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
             }}
         >
             <MoreHorizontal size={16} />
-            Filter {statusFilter !== "ALL" && `(${statusFilter.charAt(0) + statusFilter.slice(1).toLowerCase()})`}
+            Filter {statusFilter !== "ALL" && `(${statusFilter === "OUT_OF_STOCK" ? "Out of Stock" : statusFilter.charAt(0) + statusFilter.slice(1).toLowerCase()})`}
         </motion.button>
     );
 
@@ -593,6 +593,10 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
                                                     {
                                                         content: 'Expired',
                                                         onAction: () => { setStatusFilter("EXPIRED"); setFilterPopoverActive(false); },
+                                                    },
+                                                    {
+                                                        content: 'Out of Stock',
+                                                        onAction: () => { setStatusFilter("OUT_OF_STOCK"); setFilterPopoverActive(false); },
                                                     },
                                                 ]}
                                             />

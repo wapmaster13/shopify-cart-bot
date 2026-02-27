@@ -29,9 +29,70 @@ export async function loader({ request }: { request: Request }) {
   }
 
   // 2. Fetch rules to display
-  const rules = await prisma.giftRule.findMany({
+  const dbRules = await prisma.giftRule.findMany({
     where: { shop: session.shop },
     orderBy: { createdAt: 'desc' }
+  });
+
+  // 3. Check inventory for all gift variants to flag OUT_OF_STOCK bots
+  let outOfStockVariantIds = new Set<string>();
+  const allActiveGiftVariantIds = new Set<string>();
+
+  dbRules.forEach(rule => {
+    if (rule.isActive && rule.giftVariantIds) {
+      try {
+        const ids = JSON.parse(rule.giftVariantIds);
+        ids.forEach((id: string) => allActiveGiftVariantIds.add(id));
+      } catch (e) { }
+    }
+  });
+
+  const uniqueGiftVariantIds = Array.from(allActiveGiftVariantIds);
+
+  if (uniqueGiftVariantIds.length > 0) {
+    try {
+      // Chunk by 250 (Admin GraphQL Limit for nodes)
+      for (let i = 0; i < uniqueGiftVariantIds.length; i += 250) {
+        const chunkedIds = uniqueGiftVariantIds.slice(i, i + 250);
+        const response = await admin.graphql(
+          `#graphql
+          query getInventory($ids: [ID!]!) {
+            nodes(ids: $ids) {
+              ... on ProductVariant {
+                id
+                inventoryQuantity
+                inventoryPolicy
+              }
+            }
+          }`,
+          { variables: { ids: chunkedIds } }
+        );
+        const json = await response.json();
+        const nodes = json.data?.nodes || [];
+
+        nodes.forEach((node: any) => {
+          if (node && node.inventoryPolicy === 'DENY' && (node.inventoryQuantity === null || node.inventoryQuantity <= 0)) {
+            outOfStockVariantIds.add(node.id);
+          }
+        });
+      }
+    } catch (e) {
+      console.error("CartBot: Failed to fetch inventory config for Out-of-Stock bulk check", e);
+    }
+  }
+
+  const rules = dbRules.map((rule) => {
+    let isOutOfStock = false;
+    if (rule.isActive && rule.giftVariantIds) {
+      try {
+        const ids = JSON.parse(rule.giftVariantIds);
+        isOutOfStock = ids.some((id: string) => outOfStockVariantIds.has(id));
+      } catch (e) { }
+    }
+    return {
+      ...rule,
+      status: isOutOfStock ? "OUT_OF_STOCK" : rule.status
+    };
   });
 
   // Check App Embed Status

@@ -52,6 +52,8 @@ export async function loader({ request, params }: { request: Request, params: { 
                             id
                             title
                             price
+                            inventoryQuantity
+                            inventoryPolicy
                             product { title }
                         }
                         ... on Product {
@@ -70,7 +72,9 @@ export async function loader({ request, params }: { request: Request, params: { 
                     return {
                         id: node.id,
                         title: node.title === 'Default Title' ? node.product.title : `${node.product.title} - ${node.title}`,
-                        price: parseFloat(node.price || 0)
+                        price: parseFloat(node.price || 0),
+                        inventoryQuantity: node.inventoryQuantity,
+                        inventoryPolicy: node.inventoryPolicy
                     };
                 }
                 return { id: node.id, title: node.title, price: 0 };
@@ -428,6 +432,8 @@ export default function BotArchitectEdit() {
     const shopify = useAppBridge();
     const isSubmitting = nav.state === "submitting";
 
+    const isOutOfStock = preloadedGiftVariants.some(v => v.inventoryPolicy === 'DENY' && (v.inventoryQuantity === null || v.inventoryQuantity <= 0));
+
     const currencySymbol = (() => {
         try {
             return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode || 'USD' }).formatToParts(0).find(p => p.type === 'currency')?.value || currencyCode || '$';
@@ -638,6 +644,21 @@ export default function BotArchitectEdit() {
                     <Text as="h1" variant="heading2xl">Edit Automation</Text>
                     <Text as="p" tone="subdued">Refine your bot's behavior and logic.</Text>
                 </motion.div>
+
+                {isOutOfStock && (
+                    <motion.div variants={sectionVariants} style={{ marginBottom: 20 }}>
+                        <Banner tone="critical" title="Out of Stock">
+                            <BlockStack gap="200">
+                                <p>One or more of the selected gift products currently has 0 inventory and this bot cannot continue to add the product to the cart. Please restock or change the product(s):</p>
+                                <ul style={{ listStyleType: "disc", paddingLeft: "20px" }}>
+                                    {preloadedGiftVariants.filter(v => v.inventoryPolicy === 'DENY' && (v.inventoryQuantity === null || v.inventoryQuantity <= 0)).map((v, i) => (
+                                        <li key={i}>{v.title}</li>
+                                    ))}
+                                </ul>
+                            </BlockStack>
+                        </Banner>
+                    </motion.div>
+                )}
 
                 {actionData?.error && (
                     <motion.div variants={sectionVariants} style={{ marginBottom: 20 }}>
