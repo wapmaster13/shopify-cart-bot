@@ -84,19 +84,20 @@ export function run(input) {
         }
     }
 
+    // Disable update operations to bypass Shopify Plus restrictions.
+    // Gifts are expected to be 0$ variants handled elsewhere.
+    /*
     if (giftsToDiscount.size > 0) {
         for (const line of cartLines) {
             const variantId = extractId(line.merchandise?.id);
 
             if (giftsToDiscount.has(variantId)) {
-                // Ignore if it's already discounted/free (we can't check easily without properties, 
-                // but Cart Transform handles redundant operations gracefully).
                 operations.push({
                     update: {
                         cartLineId: line.id,
                         price: {
                             adjustment: {
-                                percentageDecrease: { value: 100 }
+                                fixedPricePerUnit: { amount: 0 }
                             }
                         }
                     }
@@ -108,6 +109,7 @@ export function run(input) {
     if (operations.length > 0) {
         return { operations };
     }
+    */
 
     return NO_CHANGES;
 }

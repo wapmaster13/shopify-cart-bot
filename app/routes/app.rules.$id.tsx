@@ -8,7 +8,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export async function loader({ request, params }: { request: Request, params: any }) {
-    await authenticate.admin(request);
+    const { admin } = await authenticate.admin(request);
     const rule = await prisma.giftRule.findUnique({
         where: { id: params.id }
     });
@@ -17,7 +17,20 @@ export async function loader({ request, params }: { request: Request, params: an
         return redirect("/app");
     }
 
-    return { rule };
+    // Fetch shop currency
+    let currencyCode = "USD";
+    try {
+        const response = await admin.graphql(
+            `#graphql
+            query { shop { currencyCode } }`
+        );
+        const shopData = await response.json();
+        currencyCode = shopData?.data?.shop?.currencyCode || "USD";
+    } catch (e) {
+        console.error("Failed to fetch shop currency:", e);
+    }
+
+    return { rule, currencyCode };
 }
 
 export async function action({ request, params }: { request: Request, params: any }) {
@@ -93,11 +106,19 @@ export async function action({ request, params }: { request: Request, params: an
 }
 
 export default function EditRule() {
-    const { rule } = useLoaderData<typeof loader>();
+    const { rule, currencyCode } = useLoaderData<typeof loader>();
     const actionData: any = useActionData();
     const nav = useNavigation();
     const submit = useSubmit();
     const shopify = useAppBridge();
+
+    const currencySymbol = (() => {
+        try {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode || 'USD' }).formatToParts(0).find(p => p.type === 'currency')?.value || currencyCode || '$';
+        } catch (e) {
+            return '$';
+        }
+    })();
 
     const [triggerAmount, setTriggerAmount] = useState(rule.minCartValue.toString());
     const [giftVariantId, setGiftVariantId] = useState(rule.giftVariantIds ? JSON.parse(rule.giftVariantIds)[0] : "");
@@ -148,7 +169,7 @@ export default function EditRule() {
                                     value={triggerAmount}
                                     onChange={setTriggerAmount}
                                     autoComplete="off"
-                                    prefix="$"
+                                    prefix={currencySymbol}
                                     helpText="The cart subtotal must be greater than this amount to trigger the gift."
                                 />
 

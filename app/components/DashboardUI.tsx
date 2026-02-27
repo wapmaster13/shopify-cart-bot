@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
     Page,
     Layout,
@@ -8,6 +8,8 @@ import {
     BlockStack,
     InlineStack,
     Banner,
+    Popover,
+    ActionList
 } from "@shopify/polaris";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -54,6 +56,7 @@ interface DashboardUIProps {
     isAppEmbedActive?: boolean;
     shop?: string;
     currentPlan?: string;
+    currencyCode?: string;
     onNewRule?: () => void;
 }
 
@@ -87,7 +90,7 @@ const AnimatedHeader = ({ activeRoutes, isAppEmbedActive, onNewRule }: { activeR
                 >
                     <InlineStack gap="300" align="start" blockAlign="center">
                         <Text as="h1" variant="headingXl">
-                            Good afternoon, Alex
+                            Good afternoon,
                         </Text>
                         <motion.div
                             animate={
@@ -236,7 +239,7 @@ const PlanCard = ({ plan = "FREE", activeBotsCount }: { plan?: string, activeBot
     )
 }
 
-const BotCard = ({ rule, onDelete, onEdit }: { rule: GiftRule, onDelete: (id: string) => void, onEdit: () => void }) => {
+const BotCard = ({ rule, formatCurrency, onDelete, onEdit }: { rule: GiftRule, formatCurrency: (amount: number) => string, onDelete: (id: string) => void, onEdit: () => void }) => {
     const [isHovered, setIsHovered] = useState(false);
 
     return (
@@ -272,11 +275,11 @@ const BotCard = ({ rule, onDelete, onEdit }: { rule: GiftRule, onDelete: (id: st
                 <div>
                     <Text as="h3" variant="headingSm">{rule.name || "Untitled Bot"}</Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                        {rule.triggerType === "CART_VALUE" ? `Spend over $${rule.minCartValue || rule.triggerAmount || 0}` :
+                        {rule.triggerType === "CART_VALUE" ? `Spend over ${formatCurrency(rule.minCartValue || rule.triggerAmount || 0)}` :
                             rule.triggerType === "QUANTITY" ? `Buy ${rule.minQuantity}+ items` :
                                 rule.triggerType === "PRODUCTS" ? "Product Trigger" :
                                     rule.triggerType === "COMBINED" ? "Combined Logic" :
-                                        `Spend over $${rule.triggerAmount || 0}`}
+                                        `Spend over ${formatCurrency(rule.triggerAmount || 0)}`}
                     </Text>
                 </div>
             </div>
@@ -421,9 +424,33 @@ const MasteryHub = ({ isAppEmbedActive, hasBots, hasActiveBots, shop }: { isAppE
     )
 }
 
-export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan = "FREE", onNewRule }: DashboardUIProps) {
+export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan = "FREE", currencyCode = "USD", onNewRule }: DashboardUIProps) {
     const submit = useSubmit();
     const navigate = useNavigate();
+
+    const [filterPopoverActive, setFilterPopoverActive] = useState(false);
+    const [statusFilter, setStatusFilter] = useState("ALL"); // ALL, ACTIVE, PAUSED, EXPIRED
+
+    const toggleFilterPopover = useCallback(
+        () => setFilterPopoverActive((active) => !active),
+        [],
+    );
+
+    const currencySymbol = (() => {
+        try {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode || 'USD' }).formatToParts(0).find(p => p.type === 'currency')?.value || currencyCode || '$';
+        } catch (e) {
+            return '$';
+        }
+    })();
+
+    const formatCurrency = (amount: number) => {
+        try {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode || 'USD', maximumFractionDigits: 0 }).format(amount);
+        } catch (e) {
+            return `${currencySymbol}${amount}`;
+        }
+    };
 
     const defaultRoutes: DashboardRoutes = {
         newRule: "/app/bots/new",
@@ -435,6 +462,27 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
     const handleDelete = (id: string) => {
         submit({ intent: "delete", id }, { method: "post" });
     };
+
+    const filteredRules = rules.filter((rule) => {
+        if (statusFilter === "ALL") return true;
+        return rule.status === statusFilter;
+    });
+
+    const filterActivator = (
+        <motion.button
+            whileHover={{ scale: 1.05, background: "rgba(0,0,0,0.05)" }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleFilterPopover}
+            style={{
+                background: "transparent", border: "1px solid #cbd5e1", borderRadius: "8px",
+                padding: "6px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                fontSize: "0.85rem", fontWeight: 600, color: "#475569"
+            }}
+        >
+            <MoreHorizontal size={16} />
+            Filter {statusFilter !== "ALL" && `(${statusFilter.charAt(0) + statusFilter.slice(1).toLowerCase()})`}
+        </motion.button>
+    );
 
     return (
         <Page fullWidth>
@@ -486,39 +534,58 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
                                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                                     <InlineStack align="space-between" blockAlign="center">
                                         <Text as="h2" variant="headingLg">Your Bots</Text>
-                                        <motion.button
-                                            whileHover={{ scale: 1.05, background: "rgba(0,0,0,0.05)" }}
-                                            whileTap={{ scale: 0.95 }}
-                                            style={{
-                                                background: "transparent", border: "1px solid #cbd5e1", borderRadius: "8px",
-                                                padding: "6px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                                                fontSize: "0.85rem", fontWeight: 600, color: "#475569"
-                                            }}
+                                        <Popover
+                                            active={filterPopoverActive}
+                                            activator={filterActivator}
+                                            autofocusTarget="first-node"
+                                            onClose={toggleFilterPopover}
                                         >
-                                            <MoreHorizontal size={16} />
-                                            Filter
-                                        </motion.button>
+                                            <ActionList
+                                                actionRole="menuitem"
+                                                items={[
+                                                    {
+                                                        content: 'All Bots',
+                                                        onAction: () => { setStatusFilter("ALL"); setFilterPopoverActive(false); },
+                                                    },
+                                                    {
+                                                        content: 'Active',
+                                                        onAction: () => { setStatusFilter("ACTIVE"); setFilterPopoverActive(false); },
+                                                    },
+                                                    {
+                                                        content: 'Paused',
+                                                        onAction: () => { setStatusFilter("PAUSED"); setFilterPopoverActive(false); },
+                                                    },
+                                                    {
+                                                        content: 'Expired',
+                                                        onAction: () => { setStatusFilter("EXPIRED"); setFilterPopoverActive(false); },
+                                                    },
+                                                ]}
+                                            />
+                                        </Popover>
                                     </InlineStack>
                                 </motion.div>
 
                                 <div style={{ marginTop: "20px" }}>
                                     <AnimatePresence>
-                                        {rules.length === 0 ? (
+                                        {filteredRules.length === 0 ? (
                                             <motion.div
                                                 initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                                                 style={{ ...glassStyle, padding: "60px", textAlign: "center" }}
                                             >
                                                 <Bot size={48} color="#cbd5e1" style={{ margin: "0 auto 20px" }} />
-                                                <Text as="h3" variant="headingMd" tone="subdued">No bots active yet</Text>
-                                                <div style={{ marginTop: "20px" }}>
-                                                    <PolarisButton variant="primary" onClick={onNewRule ? onNewRule : () => navigate(activeRoutes.newRule)}>Launch your first bot</PolarisButton>
-                                                </div>
+                                                <Text as="h3" variant="headingMd" tone="subdued">{statusFilter === "ALL" ? "No bots active yet" : `No ${statusFilter.toLowerCase()} bots found`}</Text>
+                                                {statusFilter === "ALL" && (
+                                                    <div style={{ marginTop: "20px" }}>
+                                                        <PolarisButton variant="primary" onClick={onNewRule ? onNewRule : () => navigate(activeRoutes.newRule)}>Launch your first bot</PolarisButton>
+                                                    </div>
+                                                )}
                                             </motion.div>
                                         ) : (
-                                            rules.map((rule) => (
+                                            filteredRules.map((rule) => (
                                                 <BotCard
                                                     key={rule.id}
                                                     rule={rule}
+                                                    formatCurrency={formatCurrency}
                                                     onDelete={handleDelete}
                                                     onEdit={() => navigate(activeRoutes.editRule(rule.id))}
                                                 />

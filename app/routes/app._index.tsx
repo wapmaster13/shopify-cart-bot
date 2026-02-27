@@ -38,6 +38,19 @@ export async function loader({ request }: { request: Request }) {
   const isAppEmbedActive = await checkAppEmbedStatus(admin);
   const shop = session.shop;
 
+  // Fetch shop currency
+  let currencyCode = "USD";
+  try {
+    const response = await admin.graphql(
+      `#graphql
+          query { shop { currencyCode } }`
+    );
+    const shopData = await response.json();
+    currencyCode = shopData?.data?.shop?.currencyCode || "USD";
+  } catch (e) {
+    console.error("Failed to fetch shop currency:", e);
+  }
+
   // Check billing
   const billingCheck = await billing.check({
     plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
@@ -54,7 +67,7 @@ export async function loader({ request }: { request: Request }) {
     }
   }
 
-  return { rules, isAppEmbedActive, shop, currentPlan };
+  return { rules, isAppEmbedActive, shop, currentPlan, currencyCode };
 }
 
 import { useSubmit } from "@remix-run/react";
@@ -119,7 +132,7 @@ import { DashboardUI } from "../components/DashboardUI";
 import { useNavigate } from "@remix-run/react";
 
 export default function Index() {
-  const { rules, isAppEmbedActive, shop, currentPlan } = useLoaderData<typeof loader>();
+  const { rules, isAppEmbedActive, shop, currentPlan, currencyCode } = useLoaderData<typeof loader>();
   const navigate = useNavigate(); // Inițializăm router-ul Remix
 
   const handleCreateRule = () => {
@@ -141,6 +154,7 @@ export default function Index() {
         isAppEmbedActive={isAppEmbedActive}
         shop={shop}
         currentPlan={currentPlan}
+        currencyCode={currencyCode}
         onNewRule={handleCreateRule}
         routes={{
           newRule: "/app/bots/new",

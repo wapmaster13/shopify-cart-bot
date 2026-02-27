@@ -98,7 +98,20 @@ export async function loader({ request, params }: { request: Request, params: { 
         }
     }
 
-    return { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan };
+    // Fetch shop currency
+    let currencyCode = "USD";
+    try {
+        const response = await admin.graphql(
+            `#graphql
+            query { shop { currencyCode } }`
+        );
+        const shopData = await response.json();
+        currencyCode = shopData?.data?.shop?.currencyCode || "USD";
+    } catch (e) {
+        console.error("Failed to fetch shop currency:", e);
+    }
+
+    return { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan, currencyCode };
 }
 
 export async function action({ request, params }: { request: Request, params: any }) {
@@ -406,7 +419,7 @@ const LogicSwitch = ({ icon: Icon, label, description, checked, onChange, color 
 // --- Main Page Component ---
 
 export default function BotArchitectEdit() {
-    const { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan } = useLoaderData<typeof loader>();
+    const { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan, currencyCode } = useLoaderData<typeof loader>();
     const hasProAccess = currentPlan === "PRO" || currentPlan === "ULTIMATE";
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const nav = useNavigation();
@@ -414,6 +427,22 @@ export default function BotArchitectEdit() {
     const actionData = useActionData<{ error?: string }>();
     const shopify = useAppBridge();
     const isSubmitting = nav.state === "submitting";
+
+    const currencySymbol = (() => {
+        try {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode || 'USD' }).formatToParts(0).find(p => p.type === 'currency')?.value || currencyCode || '$';
+        } catch (e) {
+            return '$';
+        }
+    })();
+
+    const formatCurrency = (amount: number) => {
+        try {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode || 'USD', maximumFractionDigits: 2 }).format(amount);
+        } catch (e) {
+            return `${currencySymbol}${amount}`;
+        }
+    };
 
     // --- State Initialization with Rule Data ---
 
@@ -726,7 +755,7 @@ export default function BotArchitectEdit() {
                                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                                             <TextField
                                                 label="Cart Subtotal Threshold"
-                                                prefix="$"
+                                                prefix={currencySymbol}
                                                 type="number"
                                                 value={minCartValue}
                                                 onChange={setMinCartValue}
@@ -771,7 +800,7 @@ export default function BotArchitectEdit() {
                                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
                                             {giftProducts.map((p, i) => (
                                                 <Badge key={i} tone="success">
-                                                    {`${p.title} ${p.price === undefined ? "" : (p.price === 0 ? "(FREE)" : `- $${p.price.toFixed(2)}`)}`}
+                                                    {`${p.title} ${p.price === undefined ? "" : (p.price === 0 ? "(FREE)" : `- ${formatCurrency(p.price)}`)}`}
                                                 </Badge>
                                             ))}
                                         </div>
