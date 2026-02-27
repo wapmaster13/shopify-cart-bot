@@ -33,11 +33,13 @@ const shopify = shopifyApp({
       amount: 19.99,
       currencyCode: 'USD',
       interval: BillingInterval.Every30Days as any,
+      trialDays: 14,
     },
     [MONTHLY_ULTIMATE_PLAN]: {
       amount: 49.99,
       currencyCode: 'USD',
       interval: BillingInterval.Every30Days as any,
+      trialDays: 14,
     },
   },
   future: {

@@ -236,9 +236,12 @@ export default function PricingPage() {
 
                             <div style={{ flex: 1, marginTop: "12px" }}>
                                 <Text as="h2" variant="headingLg">PRO</Text>
-                                <div style={{ display: "flex", alignItems: "baseline", gap: "4px", margin: "16px 0 24px" }}>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: "4px", margin: "16px 0 8px" }}>
                                     <Text as="h1" variant="heading2xl">$19.99</Text>
                                     <Text as="span" tone="subdued">/mo</Text>
+                                </div>
+                                <div style={{ marginBottom: "24px" }}>
+                                    <Badge size="large" tone="success">14-Day Free Trial included</Badge>
                                 </div>
                                 <div style={{ color: "#475569", marginBottom: "32px", fontSize: "0.95rem", lineHeight: 1.5 }}>
                                     Unlock all growth tools and maximize your conversion rate.
@@ -273,9 +276,12 @@ export default function PricingPage() {
                         <div style={glassMorphStyle(false)}>
                             <div style={{ flex: 1 }}>
                                 <Text as="h2" variant="headingLg" tone="subdued">ULTIMATE</Text>
-                                <div style={{ display: "flex", alignItems: "baseline", gap: "4px", margin: "16px 0 24px" }}>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: "4px", margin: "16px 0 8px" }}>
                                     <Text as="h1" variant="heading2xl">$49.99</Text>
                                     <Text as="span" tone="subdued">/mo</Text>
+                                </div>
+                                <div style={{ marginBottom: "24px" }}>
+                                    <Badge size="large" tone="success">14-Day Free Trial included</Badge>
                                 </div>
                                 <div style={{ color: "#64748b", marginBottom: "32px", fontSize: "0.95rem", lineHeight: 1.5 }}>
                                     For enterprise stores needing priority white-glove support.

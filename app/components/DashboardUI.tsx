@@ -10,7 +10,8 @@ import {
     Banner,
     Popover,
     ActionList,
-    Card
+    Card,
+    Modal
 } from "@shopify/polaris";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -27,9 +28,10 @@ import {
     Crown,
     ChevronDown,
     ChevronUp,
-    Lightbulb
+    Lightbulb,
+    Gift
 } from "lucide-react";
-import { useSubmit, useNavigate } from "@remix-run/react";
+import { useSubmit, useNavigate, useFetcher } from "@remix-run/react";
 
 // --- Types ---
 interface GiftRule {
@@ -59,6 +61,7 @@ interface DashboardUIProps {
     shop?: string;
     currentPlan?: string;
     currencyCode?: string;
+    lastTrialPromptDate?: string | null;
     onNewRule?: () => void;
 }
 
@@ -459,12 +462,35 @@ const MasteryHub = ({ isAppEmbedActive, hasBots, hasActiveBots, shop }: { isAppE
     )
 }
 
-export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan = "FREE", currencyCode = "USD", onNewRule }: DashboardUIProps) {
+export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan = "FREE", currencyCode = "USD", lastTrialPromptDate, onNewRule }: DashboardUIProps) {
     const submit = useSubmit();
     const navigate = useNavigate();
+    const fetcher = useFetcher();
 
     const [filterPopoverActive, setFilterPopoverActive] = useState(false);
     const [statusFilter, setStatusFilter] = useState("ALL"); // ALL, ACTIVE, PAUSED, EXPIRED
+    const [isTrialModalOpen, setIsTrialModalOpen] = useState(false);
+
+    useEffect(() => {
+        // Smart Upsell Logic
+        if (currentPlan === "FREE" && rules.length > 0) {
+            if (!lastTrialPromptDate) {
+                setIsTrialModalOpen(true);
+            } else {
+                const lastPrompt = new Date(lastTrialPromptDate);
+                const now = new Date();
+                const hoursSinceLastPrompt = (now.getTime() - lastPrompt.getTime()) / (1000 * 60 * 60);
+                if (hoursSinceLastPrompt > 24) {
+                    setIsTrialModalOpen(true);
+                }
+            }
+        }
+    }, [currentPlan, rules.length, lastTrialPromptDate]);
+
+    const handleDismissTrial = () => {
+        setIsTrialModalOpen(false);
+        fetcher.submit({ intent: "dismiss_trial" }, { method: "post", action: "/app?index" });
+    };
 
     const toggleFilterPopover = useCallback(
         () => setFilterPopoverActive((active) => !active),
@@ -718,6 +744,42 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
                     )}
                 </div>
             </div>
+
+            <Modal
+                open={isTrialModalOpen}
+                onClose={handleDismissTrial}
+                title="Congratulations on your first CartBot!"
+                primaryAction={{
+                    content: 'Claim 14-Day Free Trial',
+                    onAction: () => navigate('/app/pricing'),
+                }}
+                secondaryActions={[
+                    {
+                        content: 'Maybe Later',
+                        onAction: handleDismissTrial,
+                    },
+                ]}
+            >
+                <Modal.Section>
+                    <BlockStack gap="400">
+                        <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                            <div style={{ display: "inline-block", padding: "16px", borderRadius: "50%", background: "#eef2ff", color: "#6366f1", marginBottom: "16px" }}>
+                                <Gift size={48} />
+                            </div>
+                            <Text as="p" variant="bodyLg">
+                                You've taken the first step to boosting your Average Order Value! Did you know you are eligible for a <strong>14-Day Free Trial</strong> of our premium features?
+                            </Text>
+                            <div style={{ marginTop: "16px", background: "#f8fafc", padding: "16px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                                <ul style={{ textAlign: "left", margin: 0, paddingLeft: "20px", color: "#475569", display: "flex", flexDirection: "column", gap: "8px" }}>
+                                    <li>🚀 Unlock <strong>Unlimited Active Bots</strong></li>
+                                    <li>⏱️ Use <strong>Smart Triggers & Output Scheduling</strong></li>
+                                    <li>🎨 Get <strong>Full UI Customization</strong> controls</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </BlockStack>
+                </Modal.Section>
+            </Modal>
         </Page>
     );
 }

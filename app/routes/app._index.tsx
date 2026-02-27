@@ -128,7 +128,20 @@ export async function loader({ request }: { request: Request }) {
     }
   }
 
-  return { rules, isAppEmbedActive, shop, currentPlan, currencyCode };
+  // Fetch session data for Trial display constraints
+  const sessionData = await prisma.session.findUnique({
+    where: { id: session.id },
+    select: { lastTrialPromptDate: true }
+  });
+
+  return {
+    rules,
+    isAppEmbedActive,
+    shop,
+    currentPlan,
+    currencyCode,
+    lastTrialPromptDate: sessionData?.lastTrialPromptDate?.toISOString() || null
+  };
 }
 
 import { useSubmit } from "@remix-run/react";
@@ -136,7 +149,7 @@ import { InlineStack } from "@shopify/polaris";
 import { EditIcon, DeleteIcon } from "@shopify/polaris-icons";
 
 export async function action({ request }: { request: Request }) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
 
@@ -185,6 +198,15 @@ export async function action({ request }: { request: Request }) {
 
     return { status: "deleted" };
   }
+
+  if (intent === "dismiss_trial") {
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { lastTrialPromptDate: new Date() }
+    });
+    return { status: "dismissed_trial" };
+  }
+
   return null;
 }
 
@@ -193,7 +215,7 @@ import { DashboardUI } from "../components/DashboardUI";
 import { useNavigate } from "@remix-run/react";
 
 export default function Index() {
-  const { rules, isAppEmbedActive, shop, currentPlan, currencyCode } = useLoaderData<typeof loader>();
+  const { rules, isAppEmbedActive, shop, currentPlan, currencyCode, lastTrialPromptDate } = useLoaderData<typeof loader>();
   const navigate = useNavigate(); // Inițializăm router-ul Remix
 
   const handleCreateRule = () => {
@@ -216,6 +238,7 @@ export default function Index() {
         shop={shop}
         currentPlan={currentPlan}
         currencyCode={currencyCode}
+        lastTrialPromptDate={lastTrialPromptDate}
         onNewRule={handleCreateRule}
         routes={{
           newRule: "/app/bots/new",
