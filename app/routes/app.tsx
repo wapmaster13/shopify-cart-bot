@@ -40,7 +40,7 @@ export default function App() {
       <PolarisAppProvider i18n={translations} linkComponent={PolarisLink}>
         <s-app-nav>
           <s-link href="/app">Home</s-link>
-          <s-link href="/app/pricing">Pricing</s-link>
+          <s-link href="/app/faq">FAQ</s-link>
         </s-app-nav>
         <Outlet />
       </PolarisAppProvider>

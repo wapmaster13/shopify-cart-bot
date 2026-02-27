@@ -1,6 +1,6 @@
-import { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigate, Form, useActionData } from "@remix-run/react";
-import { useEffect } from "react";
+import { ActionFunctionArgs, LoaderFunctionArgs, redirect } from "@remix-run/node";
+import { useLoaderData, useSubmit, useNavigate, Form, useActionData, useNavigation } from "@remix-run/react";
+import { useEffect, useState } from "react";
 import { Page, Layout, Text, Button, InlineStack, Badge, Box } from "@shopify/polaris";
 import { CheckCircle2, Zap, Star, ShieldCheck } from "lucide-react";
 import { authenticate, MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN } from "../shopify.server";
@@ -45,7 +45,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 prorate: true
             });
         }
-        return null;
+        return redirect("/app");
     }
 
     const planName = plan === "ULTIMATE" ? MONTHLY_ULTIMATE_PLAN : MONTHLY_PRO_PLAN;
@@ -112,15 +112,28 @@ export default function PricingPage() {
     const actionData = useActionData<any>();
     const submit = useSubmit();
     const navigate = useNavigate();
+    const nav = useNavigation();
+
+    // Persistent loading state for slow top-level redirects
+    const [redirectingPlan, setRedirectingPlan] = useState<string | null>(null);
 
     // Workaround for Remix dropping redirect headers on errors
     useEffect(() => {
         if (actionData?.redirectUrl) {
             window.open(actionData.redirectUrl, "_top");
+        } else if (nav.state === "idle" && redirectingPlan) {
+            // If the redirect somehow didn't happen (like a successful downgrade dropping us here without top-level redirect),
+            // reset the visual state. Though downgrades should ideally refresh too, but we'll safeguard it.
+            if (!actionData?.redirectUrl && currentPlan !== redirectingPlan) {
+                // Keep it loading while we wait for any page refresh or data revalidation
+                // Alternatively, reset it if it was a plain fast action
+                setRedirectingPlan(null);
+            }
         }
-    }, [actionData]);
+    }, [actionData, nav.state]);
 
     const handleUpgrade = (plan: string) => {
+        setRedirectingPlan(plan);
         submit({ plan }, { method: "post" });
     };
 
@@ -189,16 +202,17 @@ export default function PricingPage() {
                                 </div>
                             </div>
 
-                            <Form method="post" action="/app/pricing">
+                            <Form method="post" action="/app/pricing" onSubmit={() => setRedirectingPlan("FREE")}>
                                 <input type="hidden" name="plan" value="FREE" />
                                 <Button
                                     size="large"
                                     fullWidth
                                     submit
-                                    disabled={currentPlan === "FREE"}
+                                    loading={redirectingPlan === "FREE" || (nav.state === "submitting" && nav.formData?.get("plan") === "FREE")}
+                                    disabled={currentPlan === "FREE" || redirectingPlan !== null || nav.state === "submitting"}
                                     tone={currentPlan !== "FREE" ? "critical" : undefined}
                                 >
-                                    {currentPlan === "FREE" ? "Current Plan" : "Downgrade"}
+                                    {redirectingPlan === "FREE" || (nav.state === "submitting" && nav.formData?.get("plan") === "FREE") ? "Processing..." : currentPlan === "FREE" ? "Current Plan" : "Downgrade"}
                                 </Button>
                             </Form>
                         </div>
@@ -238,16 +252,17 @@ export default function PricingPage() {
                                 </div>
                             </div>
 
-                            <Form method="post" action="/app/pricing">
+                            <Form method="post" action="/app/pricing" onSubmit={() => setRedirectingPlan("PRO")}>
                                 <input type="hidden" name="plan" value="PRO" />
                                 <Button
                                     size="large"
                                     fullWidth
                                     submit
+                                    loading={redirectingPlan === "PRO" || (nav.state === "submitting" && nav.formData?.get("plan") === "PRO")}
                                     variant={currentPlan === "PRO" ? "secondary" : "primary"}
-                                    disabled={currentPlan === "PRO"}
+                                    disabled={currentPlan === "PRO" || redirectingPlan !== null || nav.state === "submitting"}
                                 >
-                                    {currentPlan === "PRO" ? "Current Plan" : "Upgrade to PRO"}
+                                    {redirectingPlan === "PRO" || (nav.state === "submitting" && nav.formData?.get("plan") === "PRO") ? "Redirecting..." : currentPlan === "PRO" ? "Current Plan" : "Upgrade to PRO"}
                                 </Button>
                             </Form>
                         </div>
@@ -279,15 +294,16 @@ export default function PricingPage() {
                                 </div>
                             </div>
 
-                            <Form method="post" action="/app/pricing">
+                            <Form method="post" action="/app/pricing" onSubmit={() => setRedirectingPlan("ULTIMATE")}>
                                 <input type="hidden" name="plan" value="ULTIMATE" />
                                 <Button
                                     size="large"
                                     fullWidth
                                     submit
-                                    disabled={currentPlan === "ULTIMATE"}
+                                    loading={redirectingPlan === "ULTIMATE" || (nav.state === "submitting" && nav.formData?.get("plan") === "ULTIMATE")}
+                                    disabled={currentPlan === "ULTIMATE" || redirectingPlan !== null || nav.state === "submitting"}
                                 >
-                                    {currentPlan === "ULTIMATE" ? "Current Plan" : "Upgrade to Ultimate"}
+                                    {redirectingPlan === "ULTIMATE" || (nav.state === "submitting" && nav.formData?.get("plan") === "ULTIMATE") ? "Redirecting..." : currentPlan === "ULTIMATE" ? "Current Plan" : "Upgrade to Ultimate"}
                                 </Button>
                             </Form>
                         </div>
