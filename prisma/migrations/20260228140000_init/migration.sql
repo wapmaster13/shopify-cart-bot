@@ -1,11 +1,11 @@
 -- CreateTable
 CREATE TABLE "Session" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shop" TEXT NOT NULL,
     "state" TEXT NOT NULL,
     "isOnline" BOOLEAN NOT NULL DEFAULT false,
     "scope" TEXT,
-    "expires" DATETIME,
+    "expires" TIMESTAMP(3),
     "accessToken" TEXT NOT NULL,
     "userId" BIGINT,
     "firstName" TEXT,
@@ -14,21 +14,25 @@ CREATE TABLE "Session" (
     "accountOwner" BOOLEAN NOT NULL DEFAULT false,
     "locale" TEXT,
     "collaborator" BOOLEAN DEFAULT false,
-    "emailVerified" BOOLEAN DEFAULT false
+    "emailVerified" BOOLEAN DEFAULT false,
+    "lastTrialPromptDate" TIMESTAMP(3),
+
+    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "GiftRule" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shop" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "status" TEXT NOT NULL,
     "priority" INTEGER NOT NULL,
     "triggerType" TEXT NOT NULL,
     "triggerProductIds" TEXT NOT NULL,
-    "minCartValue" REAL NOT NULL,
+    "minCartValue" DOUBLE PRECISION NOT NULL,
     "minQuantity" INTEGER NOT NULL,
     "maxQuantity" INTEGER NOT NULL,
+    "countGlobalQuantity" BOOLEAN NOT NULL DEFAULT false,
     "replaceTriggerItems" BOOLEAN NOT NULL,
     "giftVariantId" TEXT,
     "giftVariantIds" TEXT NOT NULL,
@@ -38,8 +42,26 @@ CREATE TABLE "GiftRule" (
     "reverseLogic" BOOLEAN NOT NULL,
     "ajaxOnly" BOOLEAN NOT NULL,
     "applyForEachCondition" BOOLEAN NOT NULL,
-    "startDate" DATETIME,
-    "endDate" DATETIME,
+    "startDate" TIMESTAMP(3),
+    "endDate" TIMESTAMP(3),
+    "notificationEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "notificationText" TEXT,
+    "notificationBgColor" TEXT DEFAULT '#1a1a1a',
+    "notificationTextColor" TEXT DEFAULT '#ffffff',
+    "consentTitle" TEXT,
+    "consentContent" TEXT,
+    "consentAcceptText" TEXT,
+    "consentDeclineText" TEXT,
+    "consentBgColor" TEXT,
+    "consentTextColor" TEXT,
+    "consentAcceptBgColor" TEXT,
+    "consentAcceptTextColor" TEXT,
+    "consentDeclineBgColor" TEXT,
+    "consentDeclineTextColor" TEXT,
+    "consentTitleColor" TEXT,
+    "consentIcon" TEXT DEFAULT '🎁',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "GiftRule_pkey" PRIMARY KEY ("id")
 );

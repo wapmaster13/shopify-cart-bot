@@ -2,7 +2,7 @@
 
 client_id = "e2aa7e28cf273e30e3a843f59bc60b78"
 name = "GiftCart: Gift with purchase"
-application_url = "https://example.com"
+application_url = "https://cartbot-shopify.fly.dev"
 embedded = true
 
 [build]
@@ -16,9 +16,13 @@ api_version = "2026-04"
 scopes = "read_cart_transforms,read_orders,read_products,write_cart_transforms,write_products,read_themes"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://cartbot-shopify.fly.dev/auth/callback",
+  "https://cartbot-shopify.fly.dev/auth/shopify/callback",
+  "https://cartbot-shopify.fly.dev/api/auth/callback"
+]
 
 [app_proxy]
-url = "https://nonidiomatic-verda-direly.ngrok-free.dev"
+url = "https://cartbot-shopify.fly.dev"
 subpath = "advanced-cart-bot"
 prefix = "apps"
