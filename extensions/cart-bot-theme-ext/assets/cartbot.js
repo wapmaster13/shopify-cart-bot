@@ -48,7 +48,7 @@
     // --- Helper: Universal Refresh Strategy ("Kitchen Sink") ---
     async function universalCartRefresh(data = null, forceOpen = false) {
         console.log("🔴 CartBot: universalCartRefresh called | forceOpen:", forceOpen);
-        const debug = new URLSearchParams(window.location.search).has('cartbot_debug') || true;
+        const debug = new URLSearchParams(window.location.search).has('cartbot_debug');
 
         // --- 1. PREMIUM THEME SUPPORT (The Hydration Fix for Horizon, etc.) ---
         let premiumRefreshSuccess = false;
@@ -218,24 +218,25 @@
             });
         }
 
-        // --- 3. THE SAFETY NET ---
-        setTimeout(async () => {
-            try {
-                const finalCartRes = await fetch(window.Shopify.routes.root + 'cart.js');
-                const finalCart = await finalCartRes.json();
+        // --- 3. THE SAFETY NET (only if premium swap didn't work) ---
+        if (!premiumRefreshSuccess) {
+            setTimeout(async () => {
+                try {
+                    const finalCartRes = await fetch(window.Shopify.routes.root + 'cart.js');
+                    const finalCart = await finalCartRes.json();
 
-                const hasGiftData = finalCart.items.some(item => item.properties && item.properties['_FreeGift']);
-                if (hasGiftData) {
-                    const giftItem = finalCart.items.find(item => item.properties && item.properties['_FreeGift']);
-                    const bodyText = document.body.innerText || "";
-                    if (!bodyText.includes(giftItem.product_title)) {
-                        console.warn("CartBot: Safety net triggered! Missing gift in UI. Attempting another refresh cycle instead of reloading...");
-                        // Try one more AJAX refresh instead of a hard reload
-                        universalCartRefresh(null, true);
+                    const hasGiftData = finalCart.items.some(item => item.properties && item.properties['_FreeGift']);
+                    if (hasGiftData) {
+                        const giftItem = finalCart.items.find(item => item.properties && item.properties['_FreeGift']);
+                        const bodyText = document.body.innerText || "";
+                        if (!bodyText.includes(giftItem.product_title)) {
+                            console.warn("CartBot: Safety net triggered! Missing gift in UI. Attempting another refresh cycle...");
+                            universalCartRefresh(null, true);
+                        }
                     }
-                }
-            } catch (err) { }
-        }, 2000);
+                } catch (err) { }
+            }, 2000);
+        }
     }
 
 
@@ -544,7 +545,7 @@
 
     window._cartBotProcessing = false;
 
-    async function evaluateCartStateAsync(isAdd = false, addedIds = []) {
+    async function evaluateCartStateAsync(isAdd = false, addedIds = [], cartData = null) {
         if (window._cartBotProcessing) return;
         window._cartBotProcessing = true;
 
@@ -552,14 +553,21 @@
             const rules = window.CartBotRules || [];
             if (rules.length === 0) return;
 
-            const cartRes = await fetch(window.Shopify.routes.root + 'cart.js');
-            const cart = await cartRes.json();
+            // Reuse cart data from intercepted response if available, otherwise fetch
+            // NOTE: /cart/change.js returns a single line-item, not the full cart.
+            // We must validate the shape before reusing.
+            let cart = (cartData && Array.isArray(cartData.items)) ? cartData : null;
+            if (!cart) {
+                const cartRes = await fetch(window.Shopify.routes.root + 'cart.js');
+                cart = await cartRes.json();
+            }
 
             const extractId = (id) => typeof id === 'string' && id.includes('gid://') ? Number(id.split('/').pop()) : Number(id);
             const cartTotal = cart.total_price / 100;
             const targetGifts = new Set();
             let requiresConsent = false;
             let consentRule = null;
+            let notificationRule = null; // Track the first eligible rule for toaster customization
 
             // 1. Evaluate Rules
             for (const rule of rules) {
@@ -614,6 +622,7 @@
                         requiresConsent = true;
                         if (!consentRule) consentRule = rule;
                     }
+                    if (!notificationRule) notificationRule = rule; // Capture first eligible rule for notification
                 }
             }
 
@@ -655,22 +664,35 @@
             }
 
             let anySuccess = false;
+            const hasRemovals = Object.keys(itemsToRemoveKeys).length > 0;
+            const hasAdditions = itemsToAdd.length > 0;
 
-            if (Object.keys(itemsToRemoveKeys).length > 0) {
+            if (!hasRemovals && !hasAdditions) {
+                // Nothing to do, skip entirely
+                return;
+            }
+
+            // Fire gift mutation(s) — removals and non-consent additions can run in parallel
+            const mutationPromises = [];
+
+            if (hasRemovals) {
                 console.log("CartBot: Removing Ineligible Gifts", itemsToRemoveKeys);
-                try {
-                    const res = await fetch(window.Shopify.routes.root + 'cart/update.js', {
+                window.CartBotGiftShown = false; // Reset so toaster can fire again for next gift
+                mutationPromises.push(
+                    fetch(window.Shopify.routes.root + 'cart/update.js', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ updates: itemsToRemoveKeys })
-                    });
-                    if (res.ok) anySuccess = true;
-                } catch (e) { console.error("CartBot: Remove Gift Error", e); }
+                    }).then(res => { if (res.ok) anySuccess = true; })
+                        .catch(e => console.error("CartBot: Remove Gift Error", e))
+                );
             }
 
-            if (itemsToAdd.length > 0) {
+            if (hasAdditions) {
                 if (requiresConsent) {
-                    // Create a promise to wait for consent popup
+                    // Consent requires user interaction — must await separately
+                    await Promise.all(mutationPromises); // finish removals first
+                    mutationPromises.length = 0;
                     await new Promise((resolve) => {
                         showConsentPopup(consentRule, "Would you like to add an eligible free gift to your order?", async () => {
                             try {
@@ -689,20 +711,30 @@
                     });
                 } else {
                     console.log(`CartBot: Adding Missing Gifts silently`, itemsToAdd);
-                    try {
-                        const addItems = itemsToAdd.map(id => ({ id: id, quantity: 1, properties: { '_FreeGift': 'true' } }));
-                        const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+                    const addItems = itemsToAdd.map(id => ({ id: id, quantity: 1, properties: { '_FreeGift': 'true' } }));
+                    mutationPromises.push(
+                        fetch(window.Shopify.routes.root + 'cart/add.js', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                             body: JSON.stringify({ items: addItems })
-                        });
-                        if (res.ok) anySuccess = true;
-                    } catch (e) { console.error("CartBot: Add Gift Error", e); }
+                        }).then(res => { if (res.ok) anySuccess = true; })
+                            .catch(e => console.error("CartBot: Add Gift Error", e))
+                    );
                 }
+            }
+
+            // Wait for all mutations to complete
+            if (mutationPromises.length > 0) {
+                await Promise.all(mutationPromises);
             }
 
             if (anySuccess) {
                 universalCartRefresh(null, true);
+                // Show toaster notification if gifts were ADDED (not just removed)
+                if (hasAdditions && !window.CartBotGiftShown) {
+                    showGiftToaster(notificationRule);
+                    window.CartBotGiftShown = true;
+                }
             }
 
         } catch (e) {
@@ -742,34 +774,46 @@
     window.fetch = async function (...args) {
         let url = args[0] && (typeof args[0] === 'string' ? args[0] : args[0].url);
         let isCartAdd = url && url.includes('/cart/add');
+        let isCartMutation = url && (url.includes('/cart/update') || url.includes('/cart/change') || url.includes('/cart/clear'));
         let init = args[1];
         let addedIds = (isCartAdd && init && init.body) ? extractIdsFromPayload(init.body) : [];
 
+        // For /cart/add: check if consent rules exist to decide blocking vs fire-and-forget
         if (isCartAdd && !window._cartBotProcessing) {
-            try {
-                const response = await originalFetch.apply(this, args);
-                if (response.ok) {
+            const response = await originalFetch.apply(this, args);
+            if (response.ok) {
+                // Check if ANY rule requires consent — if yes, we MUST block the response
+                // to prevent "Buy It Now" from redirecting to checkout before the popup is answered
+                const hasConsentRules = (window.CartBotRules || []).some(r => r.requireConsent);
+                if (hasConsentRules) {
+                    // BLOCKING: wait for evaluation + consent popup before returning response
                     await evaluateCartStateAsync(true, addedIds);
+                } else {
+                    // Fire-and-forget: no consent needed, don't block the theme's UI
+                    evaluateCartStateAsync(true, addedIds).catch(e => console.error('CartBot: bg error', e));
                 }
-                return response;
-            } catch (e) {
-                return originalFetch.apply(this, args);
             }
+            return response;
         }
 
-        const fetchPromise = originalFetch.apply(this, args);
-
-        if (url && (url.includes('/cart/update') || url.includes('/cart/change') || url.includes('/cart/clear'))) {
-            return fetchPromise.then(async (response) => {
-                if (response.ok) {
-                    if (!window._cartBotProcessing) {
-                        await evaluateCartStateAsync(false, []);
-                    }
+        // For /cart/update, /cart/change, /cart/clear: pass response cart data to skip re-fetch
+        if (isCartMutation && !window._cartBotProcessing) {
+            const response = await originalFetch.apply(this, args);
+            if (response.ok) {
+                try {
+                    const cloned = response.clone();
+                    const cartData = await cloned.json();
+                    // Fire-and-forget with cart data from response
+                    evaluateCartStateAsync(false, [], cartData).catch(e => console.error('CartBot: bg error', e));
+                } catch (e) {
+                    // If clone/parse fails, fall back to standard evaluation
+                    evaluateCartStateAsync(false, []).catch(e2 => console.error('CartBot: bg error', e2));
                 }
-                return response;
-            });
+            }
+            return response;
         }
-        return fetchPromise;
+
+        return originalFetch.apply(this, args);
     };
 
     const originalOpen = XMLHttpRequest.prototype.open;
@@ -786,10 +830,18 @@
         this.addEventListener('load', async function () {
             if (this.responseURL && this.status >= 200 && this.status < 300) {
                 if (this.responseURL.includes('/cart/add') && !window._cartBotProcessing) {
-                    await evaluateCartStateAsync(true, addedIds);
-                } else if ((this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear'))) {
+                    const hasConsentRules = (window.CartBotRules || []).some(r => r.requireConsent);
+                    if (hasConsentRules) {
+                        await evaluateCartStateAsync(true, addedIds);
+                    } else {
+                        evaluateCartStateAsync(true, addedIds).catch(e => console.error('CartBot: bg error', e));
+                    }
+                } else if (this.responseURL.includes('/cart/update') || this.responseURL.includes('/cart/change') || this.responseURL.includes('/cart/clear')) {
                     if (!window._cartBotProcessing) {
-                        await evaluateCartStateAsync(false, []);
+                        // Try to extract cart data from XHR response
+                        let cartData = null;
+                        try { cartData = JSON.parse(this.responseText); } catch (e) { }
+                        evaluateCartStateAsync(false, [], cartData).catch(e => console.error('CartBot: bg error', e));
                     }
                 }
             }
