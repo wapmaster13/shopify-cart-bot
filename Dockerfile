@@ -28,7 +28,6 @@ EXPOSE 3000
 # Copy only what's needed from build stage
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
-COPY --from=build /app/public ./public
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/prisma ./prisma
 
