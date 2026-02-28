@@ -10,7 +10,7 @@
 (function() {
   var shop = "{{ shop.permanent_domain }}";
   var v = "{{ shop.metafields.cartbot.last_updated.value | default: '1' }}";
-  var serverUrl = 'https://nonidiomatic-verda-direly.ngrok-free.dev'; // Stable Ngrok URL
+  var serverUrl = 'https://cartbot-shopify.fly.dev'; // Production Fly.io URL
   var cartbotUrl = "{{ 'cartbot.js' | asset_url }}";
 
   function loadScript(url, callback) {

@@ -3,7 +3,7 @@
 client_id = "your-client-id" # This will be auto-updated by CLI
 name = "GiftCart: Gift with purchase"
 handle = "gift-cart-bot"
-application_url = "https://nonidiomatic-verda-direly.ngrok-free.dev"
+application_url = "https://cartbot-shopify.fly.dev"
 embedded = true
 
 [build]
@@ -34,6 +34,6 @@ api_version = "2024-07"
 embedded = false
 
 [app_proxy]
-url = "https://nonidiomatic-verda-direly.ngrok-free.dev"
+url = "https://cartbot-shopify.fly.dev"
 subpath = "advanced-cart-bot"
 prefix = "apps"
