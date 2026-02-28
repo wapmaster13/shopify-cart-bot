@@ -7,13 +7,10 @@ embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-
-[webhooks]
-api_version = "2026-04"
+include_config_on_deploy = true
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_cart_transforms,read_orders,read_products,write_cart_transforms,write_products,read_themes"
+scopes = "write_products,read_products,write_customers,read_customers,write_orders,read_orders,write_discounts,read_discounts,write_cart_transforms,read_cart_transforms,read_themes"
 
 [auth]
 redirect_urls = [
@@ -21,6 +18,14 @@ redirect_urls = [
   "https://cartbot-shopify.fly.dev/auth/shopify/callback",
   "https://cartbot-shopify.fly.dev/api/auth/callback"
 ]
+
+[webhooks]
+api_version = "2026-04"
+
+  [webhooks.privacy_compliance]
+  customer_deletion_url = "/webhooks"
+  customer_data_request_url = "/webhooks"
+  shop_deletion_url = "/webhooks"
 
 [app_proxy]
 url = "https://cartbot-shopify.fly.dev"
