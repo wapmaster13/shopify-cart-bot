@@ -1,3 +1,32 @@
-.cache
-build
+# Dependencies
 node_modules
+
+# Git
+.git
+.gitignore
+
+# Development
+.env
+.env.*
+*.sqlite
+prisma/dev.sqlite
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts (rebuilt in Docker)
+build
+dist
+.cache
+
+# Shopify CLI (not needed in production image)
+.shopify
+
+# Extensions (built separately by Shopify)
+extensions/*/node_modules

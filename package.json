@@ -12,7 +12,8 @@
         "typecheck": "tsc",
         "deploy": "npx shopify app deploy",
         "config:push": "shopify app config push",
-        "build:function": "cd extensions/gift-cart-func-v2 && npm install && npm run build"
+        "build:function": "cd extensions/gift-cart-func-v2 && npm install && npm run build",
+        "docker-start": "npx prisma migrate deploy && remix-serve ./build/server/index.js"
     },
     "dependencies": {
         "@prisma/client": "^5.22.0",
