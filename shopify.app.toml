@@ -3,7 +3,7 @@
 client_id = "e2aa7e28cf273e30e3a843f59bc60b78"
 name = "GiftCart: Gift with purchase"
 handle = "gift-cart-bot"
-application_url = "https://cartbot-shopify.fly.dev"
+application_url = "https://app.giftcart-bot.com"
 embedded = true
 
 [build]
@@ -34,6 +34,6 @@ api_version = "2024-07"
 embedded = false
 
 [app_proxy]
-url = "https://cartbot-shopify.fly.dev"
+url = "https://app.giftcart-bot.com"
 subpath = "advanced-cart-bot"
 prefix = "apps"

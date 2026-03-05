@@ -2,21 +2,20 @@
 
 client_id = "e2aa7e28cf273e30e3a843f59bc60b78"
 name = "GiftCart: Gift with purchase"
-application_url = "https://cartbot-shopify.fly.dev"
+application_url = "https://app.giftcart-bot.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [access_scopes]
 scopes = "write_products,read_products,write_customers,read_customers,write_orders,read_orders,write_discounts,read_discounts,write_cart_transforms,read_cart_transforms,read_themes"
 
 [auth]
 redirect_urls = [
-  "https://cartbot-shopify.fly.dev/auth/callback",
-  "https://cartbot-shopify.fly.dev/auth/shopify/callback",
-  "https://cartbot-shopify.fly.dev/api/auth/callback"
+  "https://app.giftcart-bot.com/auth/callback",
+  "https://app.giftcart-bot.com/auth/shopify/callback",
+  "https://app.giftcart-bot.com/api/auth/callback"
 ]
 
 [webhooks]
@@ -28,6 +27,6 @@ api_version = "2026-04"
   shop_deletion_url = "/webhooks"
 
 [app_proxy]
-url = "https://cartbot-shopify.fly.dev"
+url = "https://app.giftcart-bot.com"
 subpath = "advanced-cart-bot"
 prefix = "apps"
