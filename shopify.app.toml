@@ -2,7 +2,7 @@
 
 client_id = "e2aa7e28cf273e30e3a843f59bc60b78"
 name = "GiftCart: Gift with purchase"
-handle = "gift-cart-bot"
+handle = "giftcart-bot"
 application_url = "https://app.giftcart-bot.com"
 embedded = true
 
