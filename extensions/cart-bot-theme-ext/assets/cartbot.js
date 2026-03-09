@@ -849,6 +849,111 @@
         return originalSend.call(this, body);
     };
 
+// --- 6. Aggressive Interceptors (For "Buy It Now" / Dynamic Checkout) ---
+
+    // A. Global Click Hijacker (Catches injected Dynamic Checkout Buttons)
+    (function() {
+        const buyItNowSelectors = [
+            'form[action*="/cart/add"] #gokwik-buy-now',
+            'form[action*="/cart/add"] #gokwik-buy-now *',
+            'form[action*="/cart/add"] .shopify-payment-button__button',
+            'form[action*="/cart/add"] .shopify-payment-button__button *',
+            'form[action*="/cart/add"] .shopify-payment-button',
+            'form[action*="/cart/add"] .shopify-payment-button *',
+            'form[action*="/cart/add"] .shopify-payment-button__more-options',
+            'form[action*="/cart/add"] [onclick="onClickBuyBtn(this, event)"]',
+            'form[action*="/cart/add"] .lh-buy-now',
+            'form.fast-checkout-form #fast-checkout-btn'
+        ].join(', ');
+
+        document.addEventListener('click', async function(e) {
+            // Check if the clicked element matches any known 'Buy It Now' button
+            if (e.target.matches(buyItNowSelectors)) {
+                // 1. Stop Shopify's native redirect DEAD in its tracks
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+
+                // 2. Find the parent product form
+                const form = e.target.closest('form[action*="/cart/add"], form.shopify-product-form');
+                if (form) {
+                    console.log("CartBot: Intercepted dynamic 'Buy It Now' click successfully.");
+                    
+                    // 3. Extract data to add the main item
+                    const formData = new FormData(form);
+                    const addedIds = extractIdsFromPayload(formData);
+
+                    try {
+                        // 4. Manually submit the main item to the cart via AJAX
+                        const addRes = await originalFetch.call(window, window.Shopify.routes.root + 'cart/add.js', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (addRes.ok) {
+                            // 5. Evaluate rules (add free gifts, handle consent)
+                            await evaluateCartStateAsync(true, addedIds);
+                            
+                            // 6. Force the redirect to checkout
+                            window.location.href = window.Shopify.routes.root + 'checkout';
+                        } else {
+                            // Fallback if stock error or other issue
+                            form.submit(); 
+                        }
+                    } catch (err) {
+                        console.error("CartBot: Error processing Buy It Now click", err);
+                        window.location.href = window.Shopify.routes.root + 'checkout';
+                    }
+                }
+            }
+        }, true); // Use capture phase to catch it before anything else
+    })();
+
+    // B. Form Submit Interceptor (Fallback for classic Buy It Now buttons)
+    document.addEventListener('submit', async function (e) {
+        if (!e.target || e.target.tagName !== 'FORM') return;
+
+        const action = e.target.getAttribute('action');
+        if (action && action.includes('/cart/add')) {
+            const rules = window.CartBotRules || [];
+            if (rules.length === 0) return;
+
+            // Extra verification for older themes using name="checkout" on the submit button
+            const isBuyItNow = 
+                (document.activeElement && document.activeElement.name === 'return_to' && document.activeElement.value === '/checkout') ||
+                (e.target.querySelector('input[name="return_to"]')?.value === '/checkout') ||
+                (e.submitter && (
+                    (e.submitter.hasAttribute('data-testid') && e.submitter.getAttribute('data-testid') === 'Checkout-button') ||
+                    e.submitter.name === 'checkout'
+                ));
+
+            if (isBuyItNow) {
+                e.preventDefault();
+                console.log("CartBot: Intercepted classic Buy It Now form submission");
+
+                try {
+                    const formData = new FormData(e.target);
+                    const addRes = await originalFetch.call(window, window.Shopify.routes.root + 'cart/add.js', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (addRes.ok) {
+                        const addedIds = extractIdsFromPayload(formData);
+                        await evaluateCartStateAsync(true, addedIds);
+                        window.location.href = window.Shopify.routes.root + 'checkout';
+                    } else {
+                        e.target.submit();
+                    }
+                } catch (err) {
+                    console.error("CartBot: Error intercepting Buy It Now submit", err);
+                    e.target.submit(); 
+                }
+            }
+        }
+    }, true);
+
+
     // Init Check
     triggerSync();
 
