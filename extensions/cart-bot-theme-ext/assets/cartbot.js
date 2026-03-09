@@ -353,7 +353,10 @@
             let eligible = false;
 
             // Check Cart Value
-            const cartValuePassed = cartTotal >= parseFloat(rule.minCartValue || 0);
+            // Multi-Currency Converter Logic
+            const exchangeRate = (window.Shopify && window.Shopify.currency && window.Shopify.currency.rate) ? parseFloat(window.Shopify.currency.rate) : 1;
+            const localizedMinCartValue = parseFloat(rule.minCartValue || 0) * exchangeRate;
+            const cartValuePassed = cartTotal >= localizedMinCartValue;
 
             // Check Product Purchase & Quantities
             const triggerIds = rule.triggerProductIds || [];
@@ -572,7 +575,10 @@
             // 1. Evaluate Rules
             for (const rule of rules) {
                 let eligible = false;
-                const cartValuePassed = cartTotal >= parseFloat(rule.minCartValue || 0);
+                // Multi-Currency Converter Logic
+                const exchangeRate = (window.Shopify && window.Shopify.currency && window.Shopify.currency.rate) ? parseFloat(window.Shopify.currency.rate) : 1;
+                const localizedMinCartValue = parseFloat(rule.minCartValue || 0) * exchangeRate;
+                const cartValuePassed = cartTotal >= localizedMinCartValue;
                 const triggerIds = rule.triggerProductIds || [];
                 let matchingProductQty = 0;
 
@@ -849,10 +855,10 @@
         return originalSend.call(this, body);
     };
 
-// --- 6. Aggressive Interceptors (For "Buy It Now" / Dynamic Checkout) ---
+    // --- 6. Aggressive Interceptors (For "Buy It Now" / Dynamic Checkout) ---
 
     // A. Global Click Hijacker (Catches injected Dynamic Checkout Buttons)
-    (function() {
+    (function () {
         const buyItNowSelectors = [
             'form[action*="/cart/add"] #gokwik-buy-now',
             'form[action*="/cart/add"] #gokwik-buy-now *',
@@ -866,7 +872,7 @@
             'form.fast-checkout-form #fast-checkout-btn'
         ].join(', ');
 
-        document.addEventListener('click', async function(e) {
+        document.addEventListener('click', async function (e) {
             // Check if the clicked element matches any known 'Buy It Now' button
             if (e.target.matches(buyItNowSelectors)) {
                 // 1. Stop Shopify's native redirect DEAD in its tracks
@@ -878,7 +884,7 @@
                 const form = e.target.closest('form[action*="/cart/add"], form.shopify-product-form');
                 if (form) {
                     console.log("CartBot: Intercepted dynamic 'Buy It Now' click successfully.");
-                    
+
                     // 3. Extract data to add the main item
                     const formData = new FormData(form);
                     const addedIds = extractIdsFromPayload(formData);
@@ -893,12 +899,12 @@
                         if (addRes.ok) {
                             // 5. Evaluate rules (add free gifts, handle consent)
                             await evaluateCartStateAsync(true, addedIds);
-                            
+
                             // 6. Force the redirect to checkout
                             window.location.href = window.Shopify.routes.root + 'checkout';
                         } else {
                             // Fallback if stock error or other issue
-                            form.submit(); 
+                            form.submit();
                         }
                     } catch (err) {
                         console.error("CartBot: Error processing Buy It Now click", err);
@@ -919,7 +925,7 @@
             if (rules.length === 0) return;
 
             // Extra verification for older themes using name="checkout" on the submit button
-            const isBuyItNow = 
+            const isBuyItNow =
                 (document.activeElement && document.activeElement.name === 'return_to' && document.activeElement.value === '/checkout') ||
                 (e.target.querySelector('input[name="return_to"]')?.value === '/checkout') ||
                 (e.submitter && (
@@ -947,7 +953,7 @@
                     }
                 } catch (err) {
                     console.error("CartBot: Error intercepting Buy It Now submit", err);
-                    e.target.submit(); 
+                    e.target.submit();
                 }
             }
         }
