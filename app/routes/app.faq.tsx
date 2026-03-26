@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Page, Text, Icon } from "@shopify/polaris";
 import { ChevronDownIcon, ChevronUpIcon } from "@shopify/polaris-icons";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 import { HelpCircle, MessageCircleQuestion } from "lucide-react";
 
 const faqs = [
@@ -47,12 +47,12 @@ const glassContainer = {
     marginBottom: "16px"
 };
 
-const staggerContainer = {
+const staggerContainer: Variants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
 };
 
-const sectionVariants = {
+const sectionVariants: Variants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
 };

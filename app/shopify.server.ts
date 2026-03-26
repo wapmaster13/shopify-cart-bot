@@ -28,20 +28,6 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
   restResources,
-  billing: {
-    [MONTHLY_PRO_PLAN]: {
-      amount: 19.99,
-      currencyCode: 'USD',
-      interval: BillingInterval.Every30Days as any,
-      trialDays: 14,
-    },
-    [MONTHLY_ULTIMATE_PLAN]: {
-      amount: 49.99,
-      currencyCode: 'USD',
-      interval: BillingInterval.Every30Days as any,
-      trialDays: 14,
-    },
-  },
   future: {
     unstable_newEmbeddedAuthStrategy: true,
   },

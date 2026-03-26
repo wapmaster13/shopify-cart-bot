@@ -222,7 +222,7 @@ const ProTipsCard = () => {
     )
 }
 
-const PlanCard = ({ plan = "FREE", activeBotsCount }: { plan?: string, activeBotsCount: number }) => {
+const PlanCard = ({ plan = "FREE", activeBotsCount, shop }: { plan?: string, activeBotsCount: number, shop?: string }) => {
     const navigate = useNavigate();
     const isFree = plan === "FREE";
     const isPro = plan === "PRO";
@@ -253,7 +253,7 @@ const PlanCard = ({ plan = "FREE", activeBotsCount }: { plan?: string, activeBot
                     <Text as="span" tone="subdued">/ {limit} active bots</Text>
                 </InlineStack>
                 <motion.button
-                    onClick={() => navigate("/app/pricing")}
+                    onClick={() => shop && window.open(`https://admin.shopify.com/store/${shop.split('.')[0]}/charges/giftcart-bot/pricing_plans`, "_top")}
                     whileHover={{ scale: 1.02, boxShadow: "0 0 15px rgba(255,215,0, 0.3)" }}
                     style={{
                         width: "100%",
@@ -587,7 +587,7 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
                             <Layout.Section>
                                 <div style={{ display: "grid", gridTemplateColumns: "60% 40%", gap: "20px", marginBottom: "40px" }}>
                                     <ProTipsCard />
-                                    <PlanCard plan={currentPlan} activeBotsCount={rules.filter(r => r.isActive).length} />
+                                    <PlanCard plan={currentPlan} activeBotsCount={rules.filter(r => r.isActive).length} shop={shop} />
                                 </div>
                             </Layout.Section>
 
@@ -751,7 +751,7 @@ export function DashboardUI({ rules, routes, isAppEmbedActive, shop, currentPlan
                 title="Congratulations on your first CartBot!"
                 primaryAction={{
                     content: 'Claim 14-Day Free Trial',
-                    onAction: () => navigate('/app/pricing'),
+                    onAction: () => shop && window.open(`https://admin.shopify.com/store/${shop.split('.')[0]}/charges/giftcart-bot/pricing_plans`, "_top"),
                 }}
                 secondaryActions={[
                     {

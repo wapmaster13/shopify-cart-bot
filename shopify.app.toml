@@ -30,6 +30,14 @@ api_version = "2024-07"
   customer_data_request_url = "/webhooks"
   shop_deletion_url = "/webhooks"
 
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled" ]
+uri = "/webhooks"
+
+[[webhooks.subscriptions]]
+topics = [ "app_subscriptions/update" ]
+uri = "/webhooks"
+
 [pos]
 embedded = false
 

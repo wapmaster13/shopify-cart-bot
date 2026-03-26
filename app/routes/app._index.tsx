@@ -5,9 +5,10 @@ import prisma from "../db.server";
 import { authenticate, MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN } from "../shopify.server";
 import { ensureCartTransform, syncGiftRules } from "../utils/metafield.server";
 import { checkAppEmbedStatus } from "../utils/theme.server";
+import { getShopPlan } from "../utils/billing.server";
 
 export async function loader({ request }: { request: Request }) {
-  const { admin, session, billing } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   // 1. Auto-expire bots that have passed their End Date
   const now = new Date();
@@ -112,21 +113,8 @@ export async function loader({ request }: { request: Request }) {
     console.error("Failed to fetch shop currency:", e);
   }
 
-  // Check billing
-  const billingCheck = await billing.check({
-    plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
-    isTest: true,
-  });
-
-  let currentPlan = "FREE";
-  if (billingCheck.hasActivePayment) {
-    const activeSubscriptions = billingCheck.appSubscriptions || [];
-    if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
-      currentPlan = "ULTIMATE";
-    } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
-      currentPlan = "PRO";
-    }
-  }
+  // Check plan
+  const currentPlan = await getShopPlan(admin);
 
   // Fetch session data for Trial display constraints
   const sessionData = await prisma.session.findUnique({

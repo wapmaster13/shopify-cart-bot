@@ -7,6 +7,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
+  // Delete all bots associated with the shop to ensure clean slate upon reinstall
+  await db.giftRule.deleteMany({ where: { shop } });
+
   // Webhook requests can trigger multiple times and after an app has already been uninstalled.
   // If this webhook already ran, the session may have been deleted previously.
   if (session) {

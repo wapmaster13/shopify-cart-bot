@@ -10,6 +10,7 @@ import { CalendarIcon, LockIcon } from "@shopify/polaris-icons";
 import { authenticate, MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN } from "../shopify.server";
 import prisma from "../db.server";
 import { syncGiftRules } from "../utils/metafield.server";
+import { getShopPlan } from "../utils/billing.server";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Bot, Zap, Gift, ShieldCheck, Cpu,
@@ -22,7 +23,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 // --- Loaders & Actions ---
 
 export async function loader({ request }: { request: Request }) {
-    const { admin, billing } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
 
     // Fetch shop currency
     let currencyCode = "USD";
@@ -37,24 +38,12 @@ export async function loader({ request }: { request: Request }) {
         console.error("Failed to fetch shop currency:", e);
     }
 
-    const billingCheck = await billing.check({
-        plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
-        isTest: true,
-    });
-    let currentPlan = "FREE";
-    if (billingCheck.hasActivePayment) {
-        const activeSubscriptions = billingCheck.appSubscriptions || [];
-        if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
-            currentPlan = "ULTIMATE";
-        } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
-            currentPlan = "PRO";
-        }
-    }
-    return { currentPlan, currencyCode };
+    const currentPlan = await getShopPlan(admin);
+    return { currentPlan, currencyCode, shop: session.shop };
 }
 
 export async function action({ request }: { request: Request }) {
-    const { admin, session, billing } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
     const shop = session.shop;
     const formData = await request.formData();
 
@@ -123,19 +112,7 @@ export async function action({ request }: { request: Request }) {
     }
 
     // Billing Enforcements
-    const billingCheck = await billing.check({
-        plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
-        isTest: true,
-    });
-    let currentPlan = "FREE";
-    if (billingCheck.hasActivePayment) {
-        const activeSubscriptions = billingCheck.appSubscriptions || [];
-        if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
-            currentPlan = "ULTIMATE";
-        } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
-            currentPlan = "PRO";
-        }
-    }
+    const currentPlan = await getShopPlan(admin);
 
     if (currentPlan === "FREE") {
         if (finalStatus === "ACTIVE") {
@@ -343,7 +320,7 @@ const ProFeatureLock = ({ isLocked, onUnlockRequest, children }: any) => {
 // --- Main Page Component ---
 
 export default function BotArchitect() {
-    const { currentPlan, currencyCode } = useLoaderData<typeof loader>();
+    const { currentPlan, currencyCode, shop } = useLoaderData<typeof loader>();
     const hasProAccess = currentPlan === "PRO" || currentPlan === "ULTIMATE";
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -513,7 +490,7 @@ export default function BotArchitect() {
                 title="Unlock PRO Features"
                 primaryAction={{
                     content: "Upgrade Now",
-                    onAction: () => window.location.href = "/app/pricing"
+                    onAction: () => window.open(`https://admin.shopify.com/store/${shop.split('.')[0]}/charges/giftcart-bot/pricing_plans`, "_top")
                 }}
             >
                 <Modal.Section>

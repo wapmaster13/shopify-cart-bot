@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
-import { authenticate } from "../shopify.server";
+import { authenticate, unauthenticated } from "../shopify.server";
 import db from "../db.server";
+import { getShopPlan } from "../utils/billing.server";
 
 /**
  * Unified Webhook Handler
@@ -53,6 +54,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 console.log(`[GDPR] Shop redact complete for ${shop}`);
             } catch (error) {
                 console.error(`[GDPR] Failed to redact data for ${shop}:`, error);
+            }
+            break;
+
+        case "APP_SUBSCRIPTIONS_UPDATE":
+            console.log(`[Billing] Received subscription update for ${shop}`);
+            try {
+                // Determine the new plan utilizing the offline session token
+                const { admin } = await unauthenticated.admin(shop);
+                const currentPlan = await getShopPlan(admin);
+                
+                if (currentPlan === "FREE") {
+                    console.log(`[Downgrade] Shop ${shop} is now on FREE plan. Enforcing limits...`);
+                    // Fetch all active bots
+                    const activeBots = await db.giftRule.findMany({ 
+                         where: { shop, isActive: true }, 
+                         orderBy: { createdAt: "desc" } 
+                    });
+                    
+                    if (activeBots.length > 1) {
+                        // Keep the most recently created active bot (index 0), disable the rest
+                        const botsToDisable = activeBots.slice(1).map(b => b.id);
+                        await db.giftRule.updateMany({
+                            where: { id: { in: botsToDisable } },
+                            data: { isActive: false }
+                        });
+                        console.log(`[Downgrade] Automatically disabled ${botsToDisable.length} excess bots for ${shop}`);
+                    }
+                }
+            } catch (error) {
+                console.error(`[Billing] Failed to process subscription downgrade limits for ${shop}:`, error);
             }
             break;
 

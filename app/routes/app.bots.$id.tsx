@@ -11,6 +11,7 @@ import { CalendarIcon, LockIcon } from "@shopify/polaris-icons";
 import { authenticate, MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN } from "../shopify.server";
 import prisma from "../db.server";
 import { syncGiftRules } from "../utils/metafield.server";
+import { getShopPlan } from "../utils/billing.server";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Bot, Zap, Gift, ShieldCheck, Cpu,
@@ -23,7 +24,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 // --- Loaders & Actions ---
 
 export async function loader({ request, params }: { request: Request, params: { id: string } }) {
-    const { admin } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
 
     const rule = await prisma.giftRule.findUnique({
         where: { id: params.id }
@@ -87,20 +88,7 @@ export async function loader({ request, params }: { request: Request, params: { 
         console.error("CartBot: Failed to fetch node titles for UI", e);
     }
 
-    const { billing } = await authenticate.admin(request);
-    const billingCheck = await billing.check({
-        plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
-        isTest: true,
-    });
-    let currentPlan = "FREE";
-    if (billingCheck.hasActivePayment) {
-        const activeSubscriptions = billingCheck.appSubscriptions || [];
-        if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
-            currentPlan = "ULTIMATE";
-        } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
-            currentPlan = "PRO";
-        }
-    }
+    const currentPlan = await getShopPlan(admin);
 
     // Fetch shop currency
     let currencyCode = "USD";
@@ -115,11 +103,11 @@ export async function loader({ request, params }: { request: Request, params: { 
         console.error("Failed to fetch shop currency:", e);
     }
 
-    return { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan, currencyCode };
+    return { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan, currencyCode, shop: session.shop };
 }
 
 export async function action({ request, params }: { request: Request, params: any }) {
-    const { admin, session, billing } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
     const shop = session.shop;
     const formData = await request.formData();
     const intent = formData.get("intent");
@@ -199,19 +187,7 @@ export async function action({ request, params }: { request: Request, params: an
     }
 
     // Billing Enforcements
-    const billingCheck = await billing.check({
-        plans: [MONTHLY_PRO_PLAN, MONTHLY_ULTIMATE_PLAN],
-        isTest: true,
-    });
-    let currentPlan = "FREE";
-    if (billingCheck.hasActivePayment) {
-        const activeSubscriptions = billingCheck.appSubscriptions || [];
-        if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_ULTIMATE_PLAN)) {
-            currentPlan = "ULTIMATE";
-        } else if (activeSubscriptions.some((sub: any) => sub.name === MONTHLY_PRO_PLAN)) {
-            currentPlan = "PRO";
-        }
-    }
+    const currentPlan = await getShopPlan(admin);
 
     // Enforce FREE Plan Limitations
     if (currentPlan === "FREE") {
@@ -423,7 +399,7 @@ const LogicSwitch = ({ icon: Icon, label, description, checked, onChange, color 
 // --- Main Page Component ---
 
 export default function BotArchitectEdit() {
-    const { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan, currencyCode } = useLoaderData<typeof loader>();
+    const { rule, preloadedTriggerVariants, preloadedGiftVariants, currentPlan, currencyCode, shop } = useLoaderData<typeof loader>();
     const hasProAccess = currentPlan === "PRO" || currentPlan === "ULTIMATE";
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const nav = useNavigation();
@@ -624,7 +600,7 @@ export default function BotArchitectEdit() {
                 title="Unlock PRO Features"
                 primaryAction={{
                     content: "Upgrade Now",
-                    onAction: () => window.location.href = "/app/pricing"
+                    onAction: () => window.open(`https://admin.shopify.com/store/${shop.split('.')[0]}/charges/giftcart-bot/pricing_plans`, "_top")
                 }}
             >
                 <Modal.Section>
