@@ -16,7 +16,7 @@
         "docker-start": "npx prisma migrate deploy && remix-serve ./build/server/index.js"
     },
     "dependencies": {
-        "@prisma/client": "^5.22.0",
+        "@prisma/client": "^7.5.0",
         "@remix-run/node": "^2.10.3",
         "@remix-run/react": "^2.10.3",
         "@remix-run/serve": "^2.10.3",
@@ -28,7 +28,7 @@
         "framer-motion": "^12.34.0",
         "isbot": "^4.1.0",
         "lucide-react": "^0.564.0",
-        "prisma": "^5.22.0",
+        "prisma": "^7.5.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0"
     },
